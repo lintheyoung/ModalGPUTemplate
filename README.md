@@ -1,7 +1,5 @@
 # Modal GPU Compute Service Template
 
-[![Modal](https://modal.com/static/badge.svg)](https://modal.com)
-
 这是一个使用 [Modal](https://modal.com/) 构建的异步 GPU 计算服务模板。它包含一个 FastAPI API 网关，用于接收任务请求，并将计算密集型任务（在此示例中为 GPU 上的矩阵乘法）分派给可自动伸缩的 Modal GPU 工作函数进行处理。任务状态通过 Modal 的分布式字典进行跟踪。
 
 此模板旨在作为构建类似架构应用程序的起点，例如：
@@ -48,8 +46,8 @@
 
 1.  **克隆仓库**:
     ```bash
-    git clone <your-repository-url>
-    cd <repository-directory>
+    git clone https://github.com/lintheyoung/ModalGPUTemplate
+    cd ModalGPUTemplate
     ```
 2.  **(推荐)** 创建并激活虚拟环境:
     ```bash
@@ -128,4 +126,5 @@
 ├── test_modal_gpu_service.py          # 单任务 API 测试脚本
 ├── test_concurrent_modal_gpu_service.py # 并发 API 测试脚本
 └── README.md                          # 本文档
+└── llms                               # 喂食给LLM的Modal知识库
 ```

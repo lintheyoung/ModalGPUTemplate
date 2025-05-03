@@ -1,0 +1,3893 @@
+01_getting_started/generators.py:
+```
+# # Run a generator function on Modal
+
+# This example shows how you can run a generator function on Modal. We define a
+# function that `yields` values and then call it with the [`remote_gen`](https://modal.com/docs/reference/modal.Function#remote_gen) method. The
+# `remote_gen` method returns a generator object that can be used to iterate over
+# the values produced by the function.
+
+import modal
+
+app = modal.App("example-generators")
+
+
+@app.function()
+def f(i):
+    for j in range(i):
+        yield j
+
+
+@app.local_entrypoint()
+def main():
+    for r in f.remote_gen(10):
+        print(r)
+
+```
+
+01_getting_started/get_started.py:
+```
+import modal
+
+app = modal.App("example-get-started")
+
+
+@app.function()
+def square(x):
+    print("This code is running on a remote worker!")
+    return x**2
+
+
+@app.local_entrypoint()
+def main():
+    print("the square is", square.remote(42))
+
+```
+
+01_getting_started/hello_world.py:
+```
+# # Hello, world!
+
+# This tutorial demonstrates some core features of Modal:
+
+# * You can run functions on Modal just as easily as you run them locally.
+# * Running functions in parallel on Modal is simple and fast.
+# * Logs and errors show up immediately, even for functions running on Modal.
+
+# ## Importing Modal and setting up
+
+# We start by importing `modal` and creating a `App`.
+# We build up this `App` to [define our application](https://modal.com/docs/guide/apps).
+
+import sys
+
+import modal
+
+app = modal.App("example-hello-world")
+
+# ## Defining a function
+
+# Modal takes code and runs it in the cloud.
+
+# So first we've got to write some code.
+
+# Let's write a simple function that takes in an input,
+# prints a log or an error to the console,
+# and then returns an output.
+
+# To make this function work with Modal, we just wrap it in a decorator,
+# [`@app.function`](https://modal.com/docs/reference/modal.App#function).
+
+
+@app.function()
+def f(i):
+    if i % 2 == 0:
+        print("hello", i)
+    else:
+        print("world", i, file=sys.stderr)
+
+    return i * i
+
+
+# ## Running our function locally, remotely, and in parallel
+
+# Now let's see three different ways we can call that function:
+
+# 1. As a regular call on your `local` machine, with `f.local`
+
+# 2. As a `remote` call that runs in the cloud, with `f.remote`
+
+# 3. By `map`ping many copies of `f` in the cloud over many inputs, with `f.map`
+
+# We call `f` in each of these ways inside the `main` function below.
+
+
+@app.local_entrypoint()
+def main():
+    # run the function locally
+    print(f.local(1000))
+
+    # run the function remotely on Modal
+    print(f.remote(1000))
+
+    # run the function in parallel and remotely on Modal
+    total = 0
+    for ret in f.map(range(200)):
+        total += ret
+
+    print(total)
+
+
+# Enter `modal run hello_world.py` in a shell, and you'll see a Modal app initialize.
+# You'll then see the `print`ed logs of
+# the `main` function and, mixed in with them, all the logs of `f` as it is run
+# locally, then remotely, and then remotely and in parallel.
+
+# That's all triggered by adding the
+# [`@app.local_entrypoint`](https://modal.com/docs/reference/modal.App#local_entrypoint)
+# decorator on `main`, which defines it as the function to start from locally when we invoke `modal run`.
+
+# ## What just happened?
+
+# When we called `.remote` on `f`, the function was executed
+# _in the cloud_, on Modal's infrastructure, not on the local machine.
+
+# In short, we took the function `f`, put it inside a container,
+# sent it the inputs, and streamed back the logs and outputs.
+
+# ## But why does this matter?
+
+# Try one of these things next to start seeing the full power of Modal!
+
+# ### You can change the code and run it again
+
+# For instance, change the `print` statement in the function `f`
+# to print `"spam"` and `"eggs"` instead and run the app again.
+# You'll see that that your new code is run with no extra work from you --
+# and it should even run faster!
+
+# Modal's goal is to make running code in the cloud feel like you're
+# running code locally. That means no waiting for long image builds when you've just moved a comma,
+# no fiddling with container image pushes, and no context-switching to a web UI to inspect logs.
+
+# ### You can map over more data
+
+# Change the `map` range from `200` to some large number, like `1170`. You'll see
+# Modal create and run even more containers in parallel this time.
+
+# And it'll happen lightning fast!
+
+# ### You can run a more interesting function
+
+# The function `f` is a bit silly and doesn't do much, but in its place
+# imagine something that matters to you, like:
+
+# * Running [language model inference](https://modal.com/docs/examples/vllm_inference)
+# or [fine-tuning](https://modal.com/docs/examples/slack-finetune)
+# * Manipulating [audio](https://modal.com/docs/examples/musicgen)
+# or [images](https://modal.com/docs/examples/diffusers_lora_finetune)
+# * [Collecting financial data](https://modal.com/docs/examples/fetch_stock_prices) to backtest a trading algorithm
+
+# Modal lets you parallelize that operation effortlessly by running hundreds or
+# thousands of containers in the cloud.
+
+```
+
+02_building_containers/import_sklearn.py:
+```
+# # Install scikit-learn in a custom image
+#
+# This builds a custom image which installs the sklearn (scikit-learn) Python package in it.
+# It's an example of how you can use packages, even if you don't have them installed locally.
+#
+# First, the imports
+
+import time
+
+import modal
+
+# Next, define an app, with a custom image that installs `sklearn`.
+
+app = modal.App(
+    "import-sklearn",
+    image=modal.Image.debian_slim()
+    .apt_install("libgomp1")
+    .pip_install("scikit-learn"),
+)
+
+# The `app.image.imports()` lets us conditionally import in the global scope.
+# This is needed because we might not have sklearn and numpy installed locally,
+# but we know they are installed inside the custom image.
+
+with app.image.imports():
+    import numpy as np
+    from sklearn import datasets, linear_model
+
+# Now, let's define a function that uses one of scikit-learn's built-in datasets
+# and fits a very simple model (linear regression) to it
+
+
+@app.function()
+def fit():
+    print("Inside run!")
+    t0 = time.time()
+    diabetes_X, diabetes_y = datasets.load_diabetes(return_X_y=True)
+    diabetes_X = diabetes_X[:, np.newaxis, 2]
+    regr = linear_model.LinearRegression()
+    regr.fit(diabetes_X, diabetes_y)
+    return time.time() - t0
+
+
+# Finally, let's trigger the run locally. We also time this. Note that the first time we run this,
+# it will build the image. This might take 1-2 min. When we run this subsequent times, the image
+# is already build, and it will run much much faster.
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    with app.run():
+        t = fit.remote()
+        print("Function time spent:", t)
+    print("Full time spent:", time.time() - t0)
+
+```
+
+02_building_containers/install_cuda.py:
+```
+# # Installing the CUDA Toolkit on Modal
+
+# This code sample is intended to quickly show how different layers of the CUDA stack are used on Modal.
+# For greater detail, see our [guide to using CUDA on Modal](https://modal.com/docs/guide/cuda).
+
+# All Modal Functions with GPUs already have the NVIDIA CUDA drivers,
+# NVIDIA System Management Interface, and CUDA Driver API installed.
+
+import modal
+
+app = modal.App("example-install-cuda")
+
+
+@app.function(gpu="T4")
+def nvidia_smi():
+    import subprocess
+
+    subprocess.run(["nvidia-smi"], check=True)
+
+
+# This is enough to install and use many CUDA-dependent libraries, like PyTorch.
+
+
+@app.function(gpu="T4", image=modal.Image.debian_slim().pip_install("torch"))
+def torch_cuda():
+    import torch
+
+    print(torch.cuda.get_device_properties("cuda:0"))
+
+
+# If your application or its dependencies need components of the CUDA toolkit,
+# like the `nvcc` compiler driver, installed as system libraries or command-line tools,
+# you'll need to install those manually.
+
+# We recommend the official NVIDIA CUDA Docker images from Docker Hub.
+# You'll need to add Python 3 and pip with the `add_python` option because the image
+# doesn't have these by default.
+
+
+ctk_image = modal.Image.from_registry(
+    "nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.11"
+).entrypoint([])  # removes chatty prints on entry
+
+
+@app.function(gpu="T4", image=ctk_image)
+def nvcc_version():
+    import subprocess
+
+    return subprocess.run(["nvcc", "--version"], check=True)
+
+
+# You can check that all these functions run by invoking this script with `modal run`.
+
+
+@app.local_entrypoint()
+def main():
+    nvidia_smi.remote()
+    torch_cuda.remote()
+    nvcc_version.remote()
+
+```
+
+02_building_containers/screenshot.py:
+```
+# # Screenshot with Chromium
+
+# In this example, we use Modal functions and the `playwright` package to take screenshots
+# of websites from a list of URLs in parallel.
+
+# You can run this example on the command line with
+
+# ```
+# modal run 02_building_containers/screenshot.py --url 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+# ```
+
+# This should take a few seconds then create a `/tmp/screenshots/screenshot.png` file, shown below.
+
+# ![screenshot](./screenshot.png)
+
+# ## Setup
+
+# First we import the Modal client library.
+
+import pathlib
+
+import modal
+
+app = modal.App("example-screenshot")
+
+# ## Define a custom image
+
+# We need an image with the `playwright` Python package as well as its `chromium` plugin pre-installed.
+# This requires intalling a few Debian packages, as well as setting up a new Debian repository.
+# Modal lets you run arbitrary commands, just like in Docker:
+
+
+image = modal.Image.debian_slim(python_version="3.12").run_commands(
+    "apt-get update",
+    "apt-get install -y software-properties-common",
+    "apt-add-repository non-free",
+    "apt-add-repository contrib",
+    "pip install playwright==1.42.0",
+    "playwright install-deps chromium",
+    "playwright install chromium",
+)
+
+# ## The screenshot function
+
+# Next, the scraping function which runs headless Chromium, goes to a website, and takes a screenshot.
+# This is a Modal function which runs inside the remote container.
+
+
+@app.function(image=image)
+async def screenshot(url):
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        await page.goto(url, wait_until="networkidle")
+        await page.screenshot(path="screenshot.png")
+        await browser.close()
+        data = open("screenshot.png", "rb").read()
+        print("Screenshot of size %d bytes" % len(data))
+        return data
+
+
+# ## Entrypoint code
+
+# Let's kick it off by reading a bunch of URLs from a txt file and scrape some of those.
+
+
+@app.local_entrypoint()
+def main(url: str = "https://modal.com"):
+    filename = pathlib.Path("/tmp/screenshots/screenshot.png")
+    data = screenshot.remote(url)
+    filename.parent.mkdir(exist_ok=True)
+    with open(filename, "wb") as f:
+        f.write(data)
+    print(f"wrote {len(data)} bytes to {filename}")
+
+
+# And we're done! Please also see our
+# [introductory guide](https://modal.com/docs/examples/web-scraper)
+# for another example of a web scraper, with more in-depth logic.
+
+```
+
+03_scaling_out/basic_grid_search.py:
+```
+# # Hyperparameter search
+#
+# This example showcases a simple grid search in one dimension, where we try different
+# parameters for a model and pick the one with the best results on a holdout set.
+#
+# ## Defining the image
+#
+# First, let's build a custom image and install scikit-learn in it.
+
+import modal
+
+app = modal.App(
+    "example-basic-grid-search",
+    image=modal.Image.debian_slim().pip_install("scikit-learn~=1.5.0"),
+)
+
+# ## The Modal function
+#
+# Next, define the function. Note that we use the custom image with scikit-learn in it.
+# We also take the hyperparameter `k`, which is how many nearest neighbors we use.
+
+
+@app.function()
+def fit_knn(k):
+    from sklearn.datasets import load_digits
+    from sklearn.model_selection import train_test_split
+    from sklearn.neighbors import KNeighborsClassifier
+
+    X, y = load_digits(return_X_y=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+    clf = KNeighborsClassifier(k)
+    clf.fit(X_train, y_train)
+    score = float(clf.score(X_test, y_test))
+    print("k = %3d, score = %.4f" % (k, score))
+    return score, k
+
+
+# ## Parallel search
+#
+# To do a hyperparameter search, let's map over this function with different values
+# for `k`, and then select for the best score on the holdout set:
+
+
+@app.local_entrypoint()
+def main():
+    # Do a basic hyperparameter search
+    best_score, best_k = max(fit_knn.map(range(1, 100)))
+    print("Best k = %3d, score = %.4f" % (best_k, best_score))
+
+```
+
+03_scaling_out/dynamic_batching.py:
+```
+# # Dynamic batching for ASCII and character conversion
+
+# This example demonstrates how to dynamically batch a simple
+# application that converts ASCII codes to characters and vice versa.
+
+# For more details about using dynamic batching and optimizing
+# the batching configurations for your application, see
+# the [dynamic batching guide](https://modal.com/docs/guide/dynamic-batching).
+
+# ## Setup
+
+# Let's start by defining the image for the application.
+
+import modal
+
+app = modal.App(
+    "example-dynamic-batching-ascii-conversion",
+    image=modal.Image.debian_slim(python_version="3.11"),
+)
+
+
+# ## Defining a Batched Function
+
+# Now, let's define a function that converts ASCII codes to characters. This
+# async Batched Function allows us to convert up to four ASCII codes at once.
+
+
+@app.function()
+@modal.batched(max_batch_size=4, wait_ms=1000)
+async def asciis_to_chars(asciis: list[int]) -> list[str]:
+    return [chr(ascii) for ascii in asciis]
+
+
+# If there are fewer than four ASCII codes in the batch, the Function will wait
+# for one second, as specified by `wait_ms`, to allow more inputs to arrive before
+# returning the result.
+
+# The input `asciis` to the Function is a list of integers, and the
+# output is a list of strings. To allow batching, the input list `asciis`
+# and the output list must have the same length.
+
+# You must invoke the Function with an individual ASCII input, and a single
+# character will be returned in response.
+
+# ## Defining a class with a Batched Method
+
+# Next, let's define a class that converts characters to ASCII codes. This
+# class has an async Batched Method `chars_to_asciis` that converts characters
+# to ASCII codes.
+
+# Note that if a class has a Batched Method, it cannot have other Batched Methods
+# or Methods.
+
+
+@app.cls()
+class AsciiConverter:
+    @modal.batched(max_batch_size=4, wait_ms=1000)
+    async def chars_to_asciis(self, chars: list[str]) -> list[int]:
+        asciis = [ord(char) for char in chars]
+        return asciis
+
+
+# ## ASCII and character conversion
+
+# Finally, let's define the `local_entrypoint` that uses the Batched Function
+# and Class Method to convert ASCII codes to characters and
+# vice versa.
+
+# We use [`map.aio`](https://modal.com/docs/reference/modal.Function#map) to asynchronously map
+# over the ASCII codes and characters. This allows us to invoke the Batched
+# Function and the Batched Method over a range of ASCII codes and characters
+# in parallel.
+#
+# Run this script to see which characters correspond to ASCII codes 33 through 38!
+
+
+@app.local_entrypoint()
+async def main():
+    ascii_converter = AsciiConverter()
+    chars = []
+    async for char in asciis_to_chars.map.aio(range(33, 39)):
+        chars.append(char)
+
+    print("Characters:", chars)
+
+    asciis = []
+    async for ascii in ascii_converter.chars_to_asciis.map.aio(chars):
+        asciis.append(ascii)
+
+    print("ASCII codes:", asciis)
+
+```
+
+03_scaling_out/fetch_stock_prices.py:
+```
+# ---
+# output-directory: "/tmp/"
+# ---
+# # Fetching stock prices in parallel
+
+# This is a simple example that uses the Yahoo! Finance API to fetch a bunch of stock data.
+
+# We do this in parallel, which demonstrates the ability to map over a set of items,
+# in this case 100 stock tickers.
+
+# You can run this script on the terminal with
+
+# ```bash
+# modal run 03_scaling_out/fetch_stock_prices.py
+# ```
+
+# If everything goes well, it should plot something like this:
+
+# ![stock prices](./stock_prices.png)
+
+
+# ## Setup
+
+# For this image, we need
+
+# - `httpx` and `beautifulsoup4` to fetch a list of ETFs from a HTML page
+# - `yfinance` to fetch stock prices from the Yahoo Finance API
+# - `matplotlib` to plot the result
+
+import io
+import os
+
+import modal
+
+app = modal.App(
+    "example-fetch-stock-prices",
+    image=modal.Image.debian_slim(python_version="3.12").pip_install(
+        "httpx==0.28.1",
+        "yfinance==0.2.54",
+        "beautifulsoup4~=4.12.2",
+        "matplotlib~=3.7.1",
+    ),
+)
+
+# ## Fetch a list of tickers
+
+# The `yfinance` package does not have a way to download a list of stocks.
+# To get a list of stocks, we parse the HTML from Yahoo Finance using Beautiful Soup
+# and ask for the top 100 ETFs.
+
+
+@app.function()
+def get_stocks():
+    import bs4
+    import httpx
+
+    headers = {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.122 Safari/537.36",
+        "referer": "https://finance.yahoo.com/",
+    }
+    url = "https://finance.yahoo.com/etfs?count=100&offset=0"
+    res = httpx.get(url, headers=headers, follow_redirects=True)
+    res.raise_for_status()
+    soup = bs4.BeautifulSoup(res.text, "html.parser")
+    for link in soup.select('a[href*="/quote/"]'):
+        try:
+            symbol, *_ = link.text.strip().split(" ")
+            if symbol:
+                print(f"Found symbol {symbol}")
+                yield symbol
+        except Exception as e:
+            print(f"Error parsing {link}: {e}")
+
+
+# ## Fetch stock prices
+
+# Now, let's fetch the stock data. This is the function that we will parallelize.
+# It's fairly simple and just uses the `yfinance` package.
+
+
+@app.function()
+def get_prices(symbol):
+    import yfinance
+
+    print(f"Fetching symbol {symbol}...")
+    ticker = yfinance.Ticker(symbol)
+    data = ticker.history(period="1Y")["Close"]
+    print(f"Done fetching symbol {symbol}!")
+    return symbol, data.to_dict()
+
+
+# ## Plot the result
+
+# Here is our plotting code. We run this in Modal, although you could also run it locally.
+# Note that the plotting code calls the other two functions.
+# Since we plot the data in the cloud, we can't display it, so we generate a PNG
+# and return the binary content from the function.
+
+
+@app.function()
+def plot_stocks():
+    from matplotlib import pyplot, ticker
+
+    # Setup
+    pyplot.style.use("ggplot")
+    fig, ax = pyplot.subplots(figsize=(8, 5))
+
+    # Get data
+    tickers = list(get_stocks.remote_gen())
+    if not tickers:
+        raise RuntimeError("Retrieved zero stock tickers!")
+    data = list(get_prices.map(tickers))
+    first_date = min((min(prices.keys()) for symbol, prices in data if prices))
+    last_date = max((max(prices.keys()) for symbol, prices in data if prices))
+
+    # Plot every symbol
+    for symbol, prices in data:
+        if len(prices) == 0:
+            continue
+        dates = list(sorted(prices.keys()))
+        prices = list(prices[date] for date in dates)
+        changes = [
+            100.0 * (price / prices[0] - 1) for price in prices
+        ]  # Normalize to initial price
+        if changes[-1] > 20:
+            # Highlight this line
+            p = ax.plot(dates, changes, alpha=0.7)
+            ax.annotate(
+                symbol,
+                (last_date, changes[-1]),
+                ha="left",
+                va="center",
+                color=p[0].get_color(),
+                alpha=0.7,
+            )
+        else:
+            ax.plot(dates, changes, color="gray", alpha=0.2)
+
+    # Configure axes and title
+    ax.yaxis.set_major_formatter(ticker.PercentFormatter())
+    ax.set_title(f"Best Tickers {first_date.date()} - {last_date.date()}")
+    ax.set_ylabel(f"% change, {first_date.date()} = 0%")
+
+    # Dump the chart to .png and return the bytes
+    with io.BytesIO() as buf:
+        pyplot.savefig(buf, format="png", dpi=300)
+        return buf.getvalue()
+
+
+# ## Entrypoint
+#
+# The entrypoint locally runs the app, gets the chart back as a PNG file, and
+# saves it to disk.
+
+OUTPUT_DIR = "/tmp/"
+
+
+@app.local_entrypoint()
+def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    data = plot_stocks.remote()
+    filename = os.path.join(OUTPUT_DIR, "stock_prices.png")
+    print(f"saving data to {filename}")
+    with open(filename, "wb") as f:
+        f.write(data)
+
+```
+
+04_secrets/db_to_sheet.py:
+```
+# ---
+# deploy: true
+# ---
+
+# # Write to Google Sheets from Postgres
+
+# In this tutorial, we'll show how to use Modal to schedule a daily report in a spreadsheet on Google Sheets
+# that combines data from a PostgreSQL database with data from an external API.
+
+# In particular, we'll extract the city of each user from the database, look up the current weather in that city,
+# and then build a count/histogram of how many users are experiencing each type of weather.
+
+# ## Entering credentials
+
+# We begin by setting up some credentials that we'll need in order to access our database and output
+# spreadsheet. To do that in a secure manner, we log in to our Modal account on the web and go to
+# the [Secrets](https://modal.com/secrets) section.
+
+# ### Database
+
+# First we will enter our database credentials. The easiest way to do this is to click **New
+# secret** and select the **Postgres compatible** Secret preset and fill in the requested
+# information. Then we press **Next** and name our Secret `postgres-secret` and click **Create**.
+
+# ### Google Sheets/GCP
+
+# We'll now add another Secret for Google Sheets access through Google Cloud Platform. Click **New
+# secret** and select the Google Sheets preset.
+
+# In order to access the Google Sheets API, we'll need to create a *Service Account* in Google Cloud
+# Platform. You can skip this step if you already have a Service Account json file.
+
+# 1. Sign up to Google Cloud Platform or log in if you haven't
+#    ([https://cloud.google.com/](https://cloud.google.com/)).
+
+# 2. Go to [https://console.cloud.google.com/](https://console.cloud.google.com/).
+
+# 3. In the navigation pane on the left, go to **IAM & Admin** > **Service Accounts**.
+
+# 4. Click the **+ CREATE SERVICE ACCOUNT** button.
+
+# 5. Give the service account a suitable name, like "sheet-access-bot". Click **Done**. You don't
+#    have to grant it any specific access privileges at this time.
+
+# 6. Click your new service account in the list view that appears and navigate to the **Keys**
+#    section.
+
+# 7. Click **Add key** and choose **Create new key**. Use the **JSON** key type and confirm by
+#    clicking **Create**.
+
+# 8. A json key file should be downloaded to your computer at this point. Copy the contents of that
+#    file and use it as the value for the `SERVICE_ACCOUNT_JSON` field in your new secret.
+
+# We'll name this other Secret `"gsheets-secret"`.
+
+# Now you can access the values of your Secrets from Modal Functions that you annotate with the
+# corresponding `modal.Secret`s, e.g.:
+
+import os
+
+import modal
+
+app = modal.App("example-db-to-sheet")
+
+
+@app.function(secrets=[modal.Secret.from_name("postgres-secret")])
+def show_host():
+    # automatically filled from the specified secret
+    print("Host is " + os.environ["PGHOST"])
+
+
+# Because these Secrets are Python objects, you can construct and manipulate them in your code.
+# We'll do that below by defining a variable to hold our Secret for accessing Postgres
+
+# You can additionally specify
+
+pg_secret = modal.Secret.from_name(
+    "postgres-secret",
+    required_keys=["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"],
+)
+
+
+# In order to connect to the database, we'll use the `psycopg2` Python package. To make it available
+# to your Modal Function you need to supply it with an `image` argument that tells Modal how to
+# build the container image that contains that package. We'll base it off of the `Image.debian_slim` base
+# image that's built into Modal, and make sure to install the required binary packages as well as
+# the `psycopg2` package itself:
+
+pg_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("libpq-dev")
+    .pip_install("psycopg2~=2.9.9")
+)
+
+# Since the default keynames for a **Postgres compatible** secret correspond to the environment
+# variables that `psycopg2` looks for, we can now easily connect to the database even without
+# explicit credentials in your code. We'll create a simple function that queries the city for each
+# user in the `users` table.
+
+
+@app.function(image=pg_image, secrets=[pg_secret])
+def get_db_rows(verbose=True):
+    import psycopg2
+
+    conn = psycopg2.connect()  # no explicit credentials needed
+    cur = conn.cursor()
+    cur.execute("SELECT city FROM users")
+    results = [row[0] for row in cur.fetchall()]
+    if verbose:
+        print(results)
+    return results
+
+
+# Note that we import `psycopg2` inside our function instead of the global scope. This allows us to
+# run this Modal Function even from an environment where `psycopg2` is not installed. We can test run
+# this function using the `modal run` shell command: `modal run db_to_sheet.py::app.get_db_rows`.
+
+# To run this function, make sure there is a table called `users` in your database with a column called `city`.
+# You can populate the table with some example data using the following SQL commands:
+
+# ```sql
+# CREATE TABLE users (city TEXT);
+# INSERT INTO users VALUES ('Stockholm,,Sweden');
+# INSERT INTO users VALUES ('New York,NY,USA');
+# INSERT INTO users VALUES ('Tokyo,,Japan');
+# ```
+
+# ## Applying Python logic
+
+# For each row in our source data we'll run an online lookup of the current weather using the
+# [http://openweathermap.org](http://openweathermap.org) API. To do this, we'll add the API key to
+# another Modal Secret. We'll use a custom secret called "weather-secret" with the key
+# `OPENWEATHER_API_KEY` containing our API key for OpenWeatherMap.
+
+requests_image = modal.Image.debian_slim(python_version="3.11").pip_install(
+    "requests~=2.31.0"
+)
+
+
+@app.function(
+    image=requests_image,
+    secrets=[
+        modal.Secret.from_name(
+            "weather-secret", required_keys=["OPENWEATHER_API_KEY"]
+        )
+    ],
+)
+def city_weather(city):
+    import requests
+
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {"q": city, "appid": os.environ["OPENWEATHER_API_KEY"]}
+    response = requests.get(url, params=params)
+    weather_label = response.json()["weather"][0]["main"]
+    return weather_label
+
+
+# We'll make use of Modal's built-in `function.map` method to create our report. `function.map`
+# makes it really easy to parallelize work by executing a Function on every element in a sequence of
+# data. For this example we'll just do a simple count of rows per weather type --
+# answering the question "how many of our users are experiencing each type of weather?".
+
+from collections import Counter
+
+
+@app.function()
+def create_report(cities):
+    # run city_weather for each city in parallel
+    user_weather = city_weather.map(cities)
+    count_users_by_weather = Counter(user_weather).items()
+    return count_users_by_weather
+
+
+# Let's try to run this! To make it simple to trigger the function with some
+# predefined input data, we create a "local entrypoint" that can be
+# run from the command line with
+
+# ```bash
+# modal run db_to_sheet.py
+# ```
+
+
+@app.local_entrypoint()
+def main():
+    cities = [
+        "Stockholm,,Sweden",
+        "New York,NY,USA",
+        "Tokyo,,Japan",
+    ]
+    print(create_report.remote(cities))
+
+
+# Running the local entrypoint using `modal run db_to_sheet.py` should print something like:
+# `dict_items([('Clouds', 3)])`.
+# Note that since this file only has a single app, and the app has only one local entrypoint
+# we only have to specify the file to run it - the function/entrypoint is inferred.
+
+# In this case the logic is quite simple, but in a real world context you could have applied a
+# machine learning model or any other tool you could build into a container to transform the data.
+
+# ## Sending output to a Google Sheet
+
+# We'll set up a new Google Sheet to send our report to. Using the "Sharing" dialog in Google
+# Sheets, share the document to the service account's email address (the value of the `client_email` field in the json file)
+# and make the service account an editor of the document.
+
+# You may also need to enable the Google Sheets API for your project in the Google Cloud Platform console.
+# If so, the URL will be printed inside the message of a 403 Forbidden error when you run the function.
+# It begins with https://console.developers.google.com/apis/api/sheets.googleapis.com/overview.
+
+# Lastly, we need to point our code to the correct Google Sheet. We'll need the *key* of the document.
+# You can find the key in the URL of the Google Sheet. It appears after the `/d/` in the URL, like:
+# `https://docs.google.com/spreadsheets/d/1wOktal......IJR77jD8Do`.
+
+# We'll make use of the `pygsheets` python package to authenticate with
+# Google Sheets and then update the spreadsheet with information from the report we just created:
+
+pygsheets_image = modal.Image.debian_slim(python_version="3.11").pip_install(
+    "pygsheets~=2.0.6"
+)
+
+
+@app.function(
+    image=pygsheets_image,
+    secrets=[
+        modal.Secret.from_name(
+            "gsheets-secret", required_keys=["SERVICE_ACCOUNT_JSON"]
+        )
+    ],
+)
+def update_sheet_report(rows):
+    import pygsheets
+
+    gc = pygsheets.authorize(service_account_env_var="SERVICE_ACCOUNT_JSON")
+    document_key = "1JxhGsht4wltyPFFOd2hP0eIv6lxZ5pVxJN_ZwNT-l3c"
+    sh = gc.open_by_key(document_key)
+    worksheet = sh.sheet1
+    worksheet.clear("A2")
+
+    worksheet.update_values("A2", [list(row) for row in rows])
+
+
+# At this point, we have everything we need in order to run the full program. We can put it all together in
+# another Modal Function, and add a [`schedule`](https://modal.com/docs/guide/cron) argument so it runs every day automatically:
+
+
+@app.function(schedule=modal.Period(days=1))
+def db_to_sheet():
+    rows = get_db_rows.remote()
+    report = create_report.remote(rows)
+    update_sheet_report.remote(report)
+    print("Updated sheet with new weather distribution")
+    for weather, count in report:
+        print(f"{weather}: {count}")
+
+
+# This entire app can now be deployed using `modal deploy db_to_sheet.py`. The [apps page](https://modal.com/apps)
+# shows our cron job's execution history and lets you navigate to each invocation's logs.
+# To trigger a manual run from your local code during development, you can also trigger this function using the cli:
+# `modal run db_to_sheet.py::db_to_sheet`
+
+# Note that all of the `@app.function()` annotated functions above run remotely in isolated containers that are specified per
+# function, but they are called as seamlessly as if we were using regular Python functions. This is a simple
+# showcase of how you can mix and match Modal Functions that use different environments and have them feed
+# into each other or even call each other as if they were all functions in the same local program.
+
+```
+
+05_scheduling/hackernews_alerts.py:
+```
+# ---
+# lambda-test: false
+# ---
+
+# # Run cron jobs in the cloud to search Hacker News
+
+# In this example, we use Modal to deploy a cron job that periodically queries Hacker News for
+# new posts matching a given search term, and posts the results to Slack.
+
+# ## Import and define the app
+
+# Let's start off with imports, and defining a Modal app.
+
+import os
+from datetime import datetime, timedelta
+
+import modal
+
+app = modal.App("example-hn-bot")
+
+# Now, let's define an image that has the `slack-sdk` package installed, in which we can run a function
+# that posts a slack message.
+
+slack_sdk_image = modal.Image.debian_slim().pip_install("slack-sdk")
+
+# ## Defining the function and importing the secret
+
+# Our Slack bot will need access to a bot token.
+# We can use Modal's [Secrets](https://modal.com/secrets) interface to accomplish this.
+# To quickly create a Slack bot secret, navigate to the
+# [create secret](https://modal.com/secrets/create) page, select the Slack secret template
+# from the list options, and follow the instructions in the "Where to find the credentials?" panel.
+# Name your secret `hn-bot-slack.`
+
+# Now, we define the function `post_to_slack`, which simply instantiates the Slack client using our token,
+# and then uses it to post a message to a given channel name.
+
+
+@app.function(
+    image=slack_sdk_image,
+    secrets=[
+        modal.Secret.from_name(
+            "hn-bot-slack", required_keys=["SLACK_BOT_TOKEN"]
+        )
+    ],
+)
+async def post_to_slack(message: str):
+    import slack_sdk
+
+    client = slack_sdk.WebClient(token=os.environ["SLACK_BOT_TOKEN"])
+    client.chat_postMessage(channel="hn-alerts", text=message)
+
+
+# ## Searching Hacker News
+
+# We are going to use Algolia's [Hacker News Search API](https://hn.algolia.com/api) to query for posts
+# matching a given search term in the past X days. Let's define our search term and query period.
+
+QUERY = "serverless"
+WINDOW_SIZE_DAYS = 1
+
+# Let's also define an image that has the `requests` package installed, so we can query the API.
+
+requests_image = modal.Image.debian_slim().pip_install("requests")
+
+# We can now define our main entrypoint, that queries Algolia for the term, and calls `post_to_slack`
+# on all the results. We specify a [schedule](https://modal.com/docs/guide/cron)
+# in the function decorator, which means that our function will run automatically at the given interval.
+
+
+@app.function(image=requests_image)
+def search_hackernews():
+    import requests
+
+    url = "http://hn.algolia.com/api/v1/search"
+
+    threshold = datetime.utcnow() - timedelta(days=WINDOW_SIZE_DAYS)
+
+    params = {
+        "query": QUERY,
+        "numericFilters": f"created_at_i>{threshold.timestamp()}",
+    }
+
+    response = requests.get(url, params, timeout=10).json()
+    urls = [item["url"] for item in response["hits"] if item.get("url")]
+
+    print(f"Query returned {len(urls)} items.")
+
+    post_to_slack.for_each(urls)
+
+
+# ## Test running
+
+# We can now test run our scheduled function as follows: `modal run hackernews_alerts.py::app.search_hackernews`
+
+# ## Defining the schedule and deploying
+
+# Let's define a function that will be called by Modal every day
+
+
+@app.function(schedule=modal.Period(days=1))
+def run_daily():
+    search_hackernews.remote()
+
+
+# In order to deploy this as a persistent cron job, you can run `modal deploy hackernews_alerts.py`,
+
+# Once the job is deployed, visit the [apps page](https://modal.com/apps) page to see
+# its execution history, logs and other stats.
+
+```
+
+05_scheduling/schedule_simple.py:
+```
+# ---
+# cmd: ["python", "-m", "05_scheduling.schedule_simple"]
+# ---
+
+# # Scheduling remote jobs
+
+# This example shows how you can schedule remote jobs on Modal.
+# You can do this either with:
+#
+# - [`modal.Period`](https://modal.com/docs/reference/modal.Period) - a time interval between function calls.
+# - [`modal.Cron`](https://modal.com/docs/reference/modal.Cron) - a cron expression to specify the schedule.
+
+# In the code below, the first function runs every
+# 5 seconds, and the second function runs every minute. We use the `schedule`
+# argument to specify the schedule for each function. The `schedule` argument can
+# take a `modal.Period` object to specify a time interval or a `modal.Cron` object
+# to specify a cron expression.
+
+import time
+from datetime import datetime
+
+import modal
+
+app = modal.App("example-schedule-simple")
+
+
+@app.function(schedule=modal.Period(seconds=5))
+def print_time_1():
+    print(
+        f"Printing with period 5 seconds: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}"
+    )
+
+
+@app.function(schedule=modal.Cron("* * * * *"))
+def print_time_2():
+    print(
+        f"Printing with cron every minute: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}"
+    )
+
+
+if __name__ == "__main__":
+    with modal.enable_output():
+        with app.run():
+            time.sleep(60)
+
+```
+
+sam/segment_anything.py:
+```
+# # Run Facebook's Segment Anything Model 2 (SAM 2) on Modal
+
+# This example demonstrates how to deploy Facebook's [SAM 2](https://github.com/facebookresearch/sam2)
+# on Modal. SAM2 is a powerful, flexible image and video segmentation model that can be used
+# for various computer vision tasks like object detection, instance segmentation,
+# and even as a foundation for more complex computer vision applications.
+# SAM2 extends the capabilities of the original SAM to include video segmentation.
+
+# In particular, this example segments [this video](https://www.youtube.com/watch?v=WAz1406SjVw) of a man jumping off the cliff.
+
+# The output should look something like this:
+
+# <video src="./segmented_video.mp4" width="600" height="400" controls></video>
+
+# ## Set up dependencies for SAM 2
+
+# First, we set up the necessary dependencies, including `torch`,
+# `opencv`, `huggingface_hub`, `torchvision`, and the `sam2` library.
+
+# We also install `ffmpeg`, which we will use to manipulate videos,
+# and a Python wrapper called `ffmpeg-python` for a clean interface.
+
+from pathlib import Path
+
+import modal
+
+MODEL_TYPE = "facebook/sam2-hiera-large"
+SAM2_GIT_SHA = "c2ec8e14a185632b0a5d8b161928ceb50197eddc"  # pin commit! research code is fragile
+
+image = (
+    modal.Image.debian_slim(python_version="3.10")
+    .apt_install("git", "wget", "python3-opencv", "ffmpeg")
+    .pip_install(
+        "torch~=2.4.1",
+        "torchvision==0.19.1",
+        "opencv-python==4.10.0.84",
+        "pycocotools~=2.0.8",
+        "matplotlib~=3.9.2",
+        "onnxruntime==1.19.2",
+        "onnx==1.17.0",
+        "huggingface_hub==0.25.2",
+        "ffmpeg-python==0.2.0",
+        f"git+https://github.com/facebookresearch/sam2.git@{SAM2_GIT_SHA}",
+    )
+)
+app = modal.App("sam2-app", image=image)
+
+
+# ## Wrapping the SAM 2 model in a Modal class
+
+# Next, we define the `Model` class that will handle SAM 2 operations for both image and video.
+
+# We use the `@modal.enter()` decorators here for optimization: it makes sure the initialization
+# method runs only once, when a new container starts, instead of in the path of every call.
+# We'll also use a modal Volume to cache the model weights so that they don't need to be downloaded
+# repeatedly when we start new containers.
+
+
+video_vol = modal.Volume.from_name("sam2-inputs", create_if_missing=True)
+cache_vol = modal.Volume.from_name("hf-hub-cache", create_if_missing=True)
+cache_dir = "/cache"
+
+
+@app.cls(
+    image=image.env({"HF_HUB_CACHE": cache_dir}),
+    volumes={"/root/videos": video_vol, cache_dir: cache_vol},
+    gpu="A100",
+)
+class Model:
+    @modal.enter()
+    def initialize_model(self):
+        """Download and initialize model."""
+        from sam2.sam2_video_predictor import SAM2VideoPredictor
+
+        self.video_predictor = SAM2VideoPredictor.from_pretrained(MODEL_TYPE)
+
+    @modal.method()
+    def generate_video_masks(
+        self, video="/root/videos/input.mp4", point_coords=None
+    ):
+        """Generate masks for a video."""
+        import ffmpeg
+        import numpy as np
+        import torch
+        from PIL import Image
+
+        frames_dir = convert_video_to_frames(video)
+
+        # scan all the JPEG files in this directory
+        frame_names = [
+            p
+            for p in frames_dir.iterdir()
+            if p.suffix in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+        ]
+        frame_names.sort(key=lambda p: int(p.stem))
+
+        # We are hardcoding the input point and label here
+        # In a real-world scenario, you would want to display the video
+        # and allow the user to click on the video to select the point
+        if point_coords is None:
+            width, height = Image.open(frame_names[0]).size
+            point_coords = [[width // 2, height // 2]]
+
+        points = np.array(point_coords, dtype=np.float32)
+        # for labels, `1` means positive click and `0` means negative click
+        labels = np.array([1] * len(points), np.int32)
+
+        # run the model on GPU
+        with (
+            torch.inference_mode(),
+            torch.autocast("cuda", dtype=torch.bfloat16),
+        ):
+            self.inference_state = self.video_predictor.init_state(
+                video_path=str(frames_dir)
+            )
+
+            # add new prompts and instantly get the output on the same frame
+            (
+                frame_idx,
+                object_ids,
+                masks,
+            ) = self.video_predictor.add_new_points_or_box(
+                inference_state=self.inference_state,
+                frame_idx=0,
+                obj_id=1,
+                points=points,
+                labels=labels,
+            )
+
+            print(
+                f"frame_idx: {frame_idx}, object_ids: {object_ids}, masks: {masks}"
+            )
+
+            # run propagation throughout the video and collect the results in a dict
+            video_segments = {}  # video_segments contains the per-frame segmentation results
+            for (
+                out_frame_idx,
+                out_obj_ids,
+                out_mask_logits,
+            ) in self.video_predictor.propagate_in_video(self.inference_state):
+                video_segments[out_frame_idx] = {
+                    out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                    for i, out_obj_id in enumerate(out_obj_ids)
+                }
+
+        out_dir = Path("/root/mask_frames")
+        out_dir.mkdir(exist_ok=True)
+
+        vis_frame_stride = 5  # visualize every 5th frame
+        save_segmented_frames(
+            video_segments,
+            frames_dir,
+            out_dir,
+            frame_names,
+            stride=vis_frame_stride,
+        )
+
+        ffmpeg.input(
+            f"{out_dir}/frame_*.png",
+            pattern_type="glob",
+            framerate=30 / vis_frame_stride,
+        ).filter(
+            "scale",
+            "trunc(iw/2)*2",
+            "trunc(ih/2)*2",  # round to even dimensions to encode for "dumb players", https://trac.ffmpeg.org/wiki/Encode/H.264#Encodingfordumbplayers
+        ).output(
+            str(out_dir / "out.mp4"), format="mp4", pix_fmt="yuv420p"
+        ).run()
+
+        return (out_dir / "out.mp4").read_bytes()
+
+
+# ## Segmenting videos from the command line
+
+# Finally, we define a [`local_entrypoint`](https://modal.com/docs/guide/apps#entrypoints-for-ephemeral-apps)
+# to run the segmentation from our local machine's terminal.
+
+# There are several ways to pass files between the local machine and the Modal Function.
+
+# One way is to upload the files onto a Modal [Volume](https://modal.com/docs/guide/volumes),
+# which acts as a distributed filesystem.
+
+# The other way is to convert the file to bytes and pass the bytes back and forth as the input or output of Python functions.
+# We use this method to get the video file with the segmentation results in it back to the local machine.
+
+
+@app.local_entrypoint()
+def main(
+    input_video=Path(__file__).parent / "cliff_jumping.mp4",
+    x_point=250,
+    y_point=200,
+):
+    with video_vol.batch_upload(force=True) as batch:
+        batch.put_file(input_video, "input.mp4")
+
+    model = Model()
+
+    if x_point is not None and y_point is not None:
+        point_coords = [[x_point, y_point]]
+    else:
+        point_coords = None
+
+    print(f"Running SAM 2 on {input_video}")
+    video_bytes = model.generate_video_masks.remote(point_coords=point_coords)
+
+    dir = Path("/tmp/sam2_outputs")
+    dir.mkdir(exist_ok=True, parents=True)
+    output_path = dir / "segmented_video.mp4"
+    output_path.write_bytes(video_bytes)
+    print(f"Saved output video to {output_path}")
+
+
+# ## Helper functions for SAM 2 inference
+
+# Above, we used some helper functions to for some of the details, like breaking the video into frames.
+# These are defined below.
+
+
+def convert_video_to_frames(self, input_video="/root/videos/input.mp4"):
+    import ffmpeg
+
+    input_video = Path(input_video)
+    output_dir = (  # output on local filesystem, not on the remote Volume
+        input_video.parent.parent / input_video.stem / "video_frames"
+    )
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    ffmpeg.input(input_video).output(
+        f"{output_dir}/%05d.jpg", qscale=2, start_number=0
+    ).run()
+
+    return output_dir
+
+
+def show_mask(mask, ax, obj_id=None, random_color=False):
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        cmap = plt.get_cmap("tab10")
+        cmap_idx = 0 if obj_id is None else obj_id
+        color = np.array([*cmap(cmap_idx)[:3], 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
+
+
+def save_segmented_frames(
+    video_segments, frames_dir, out_dir, frame_names, stride=5
+):
+    import io
+
+    import matplotlib.pyplot as plt
+    from PIL import Image
+
+    frames_dir, out_dir = Path(frames_dir), Path(out_dir)
+
+    frame_images = []
+    inches_per_px = 1 / plt.rcParams["figure.dpi"]
+    for out_frame_idx in range(0, len(frame_names), stride):
+        frame = Image.open(frames_dir / frame_names[out_frame_idx])
+        width, height = frame.size
+        width, height = width - width % 2, height - height % 2
+        fig, ax = plt.subplots(
+            figsize=(width * inches_per_px, height * inches_per_px)
+        )
+        ax.axis("off")
+        ax.imshow(frame)
+
+        [
+            show_mask(mask, ax, obj_id=obj_id)
+            for (obj_id, mask) in video_segments[out_frame_idx].items()
+        ]
+
+        # Convert plot to PNG bytes
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
+        # fig.savefig(buf, format="png")
+        buf.seek(0)
+        frame_images.append(buf.getvalue())
+        plt.close(fig)
+
+    for ii, frame in enumerate(frame_images):
+        (out_dir / f"frame_{str(ii).zfill(3)}.png").write_bytes(frame)
+
+```
+
+yolo/finetune_yolo.py:
+```
+# ---
+# args: ["--no-quick-check"]
+# ---
+
+# # Fine-tune open source YOLO models for object detection
+
+# Example by [@Erik-Dunteman](https://github.com/erik-dunteman) and [@AnirudhRahul](https://github.com/AnirudhRahul/).
+
+# The popular "You Only Look Once" (YOLO) model line provides high-quality object detection in an economical package.
+# In this example, we use the [YOLOv10](https://docs.ultralytics.com/models/yolov10/) model, released on May 23, 2024.
+
+# We will:
+
+# - Download two custom datasets from the [Roboflow](https://roboflow.com/) computer vision platform: a dataset of birds and a dataset of bees
+
+# - Fine-tune the model on those datasets, in parallel, using the [Ultralytics package](https://docs.ultralytics.com/)
+
+# - Run inference with the fine-tuned models on single images and on streaming frames
+
+# For commercial use, be sure to consult the [Ultralytics software license options](https://docs.ultralytics.com/#yolo-licenses-how-is-ultralytics-yolo-licensed),
+# which include AGPL-3.0.
+
+# ## Set up the environment
+
+import warnings
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import modal
+
+# Modal runs your code in the cloud inside containers. So to use it, we have to define the dependencies
+# of our code as part of the container's [image](https://modal.com/docs/guide/custom-container).
+
+image = (
+    modal.Image.debian_slim(python_version="3.10")
+    .apt_install(  # install system libraries for graphics handling
+        ["libgl1-mesa-glx", "libglib2.0-0"]
+    )
+    .pip_install(  # install python libraries for computer vision
+        ["ultralytics~=8.2.68", "roboflow~=1.1.37", "opencv-python~=4.10.0"]
+    )
+    .pip_install(  # add an optional extra that renders images in the terminal
+        "term-image==0.7.1"
+    )
+)
+
+# We also create a persistent [Volume](https://modal.com/docs/guide/volumes) for storing datasets, trained weights, and inference outputs.
+
+volume = modal.Volume.from_name("yolo-finetune", create_if_missing=True)
+volume_path = (  # the path to the volume from within the container
+    Path("/root") / "data"
+)
+
+# We attach both of these to a Modal [App](https://modal.com/docs/guide/apps).
+app = modal.App("yolo-finetune", image=image, volumes={volume_path: volume})
+
+
+# ## Download a dataset
+
+# We'll be downloading our data from the [Roboflow](https://roboflow.com/) computer vision platform, so to follow along you'll need to:
+
+# - Create a free account on [Roboflow](https://app.roboflow.com/)
+
+# - [Generate a Private API key](https://app.roboflow.com/settings/api)
+
+# - Set up a Modal [Secret](https://modal.com/docs/guide/secrets) called `roboflow-api-key` in the Modal UI [here](https://modal.com/secrets),
+# setting the `ROBOFLOW_API_KEY` to the value of your API key.
+
+# You're also free to bring your own dataset with a config in YOLOv10-compatible yaml format.
+
+# We'll be training on the medium size model, but you're free to experiment with [other model sizes](https://docs.ultralytics.com/models/yolov10/#model-variants).
+
+
+@dataclass
+class DatasetConfig:
+    """Information required to download a dataset from Roboflow."""
+
+    workspace_id: str
+    project_id: str
+    version: int
+    format: str
+    target_class: str
+
+    @property
+    def id(self) -> str:
+        return f"{self.workspace_id}/{self.project_id}/{self.version}"
+
+
+@app.function(
+    secrets=[
+        modal.Secret.from_name(
+            "roboflow-api-key", required_keys=["ROBOFLOW_API_KEY"]
+        )
+    ]
+)
+def download_dataset(config: DatasetConfig):
+    import os
+
+    from roboflow import Roboflow
+
+    rf = Roboflow(api_key=os.getenv("ROBOFLOW_API_KEY"))
+    project = (
+        rf.workspace(config.workspace_id)
+        .project(config.project_id)
+        .version(config.version)
+    )
+    dataset_dir = volume_path / "dataset" / config.id
+    project.download(config.format, location=str(dataset_dir))
+
+
+# ## Train a model
+
+# We train the model on a single A100 GPU. Training usually takes only a few minutes.
+
+MINUTES = 60
+
+TRAIN_GPU_COUNT = 1
+TRAIN_GPU = f"A100:{TRAIN_GPU_COUNT}"
+TRAIN_CPU_COUNT = 4
+
+
+@app.function(
+    gpu=TRAIN_GPU,
+    cpu=TRAIN_CPU_COUNT,
+    timeout=60 * MINUTES,
+)
+def train(
+    model_id: str,
+    dataset: DatasetConfig,
+    model_size="yolov10m.pt",
+    quick_check=False,
+):
+    from ultralytics import YOLO
+
+    volume.reload()  # make sure volume is synced
+
+    model_path = volume_path / "runs" / model_id
+    model_path.mkdir(parents=True, exist_ok=True)
+
+    data_path = volume_path / "dataset" / dataset.id / "data.yaml"
+
+    model = YOLO(model_size)
+    model.train(
+        # dataset config
+        data=data_path,
+        fraction=0.4
+        if not quick_check
+        else 0.04,  # fraction of dataset to use for training/validation
+        # optimization config
+        device=list(range(TRAIN_GPU_COUNT)),  # use the GPU(s)
+        epochs=8
+        if not quick_check
+        else 1,  # pass over entire dataset this many times
+        batch=0.95,  # automatic batch size to target fraction of GPU util
+        seed=117,  # set seed for reproducibility
+        # data processing config
+        workers=max(
+            TRAIN_CPU_COUNT // TRAIN_GPU_COUNT, 1
+        ),  # split CPUs evenly across GPUs
+        cache=False,  # cache preprocessed images in RAM?
+        # model saving config
+        project=f"{volume_path}/runs",
+        name=model_id,
+        exist_ok=True,  # overwrite previous model if it exists
+        verbose=True,  # detailed logs
+    )
+
+
+# ## Run inference on single inputs and on streams
+
+# We demonstrate two different ways to run inference -- on single images and on a stream of images.
+
+# The images we use for inference are loaded from the test set, which was added to our Volume when we downloaded the dataset.
+# Each image read takes ~50ms, and inference can take ~5ms, so the disk read would be our biggest bottleneck if we just looped over the image paths.
+# To avoid it, we parallelize the disk reads across many workers using Modal's [`.map`](https://modal.com/docs/guide/scale),
+# streaming the images to the model. This roughly mimics the behavior of an interactive object detection pipeline.
+# This can increase throughput up to ~60 images/s, or ~17 milliseconds/image, depending on image size.
+
+
+@app.function()
+def read_image(image_path: str):
+    import cv2
+
+    source = cv2.imread(image_path)
+    return source
+
+
+# We use the `@enter` feature of [`modal.Cls`](https://modal.com/docs/guide/lifecycle-functions)
+# to load the model only once on container start and reuse it for future inferences.
+# We use a generator to stream images to the model.
+
+
+@app.cls(gpu="a10g")
+class Inference:
+    def __init__(self, weights_path):
+        self.weights_path = weights_path
+
+    @modal.enter()
+    def load_model(self):
+        from ultralytics import YOLO
+
+        self.model = YOLO(self.weights_path)
+
+    @modal.method()
+    def predict(self, model_id: str, image_path: str, display: bool = False):
+        """A simple method for running inference on one image at a time."""
+        results = self.model.predict(
+            image_path,
+            half=True,  # use fp16
+            save=True,
+            exist_ok=True,
+            project=f"{volume_path}/predictions/{model_id}",
+        )
+        if display:
+            from term_image.image import from_file
+
+            terminal_image = from_file(results[0].path)
+            terminal_image.draw()
+        # you can view the output file via the Volumes UI in the Modal dashboard -- https://modal.com/storage
+
+    @modal.method()
+    def streaming_count(self, batch_dir: str, threshold: float | None = None):
+        """Counts the number of objects in a directory of images.
+
+        Intended as a demonstration of high-throughput streaming inference."""
+        import os
+        import time
+
+        image_files = [
+            os.path.join(batch_dir, f) for f in os.listdir(batch_dir)
+        ]
+
+        completed, start = 0, time.monotonic_ns()
+        for image in read_image.map(image_files):
+            # note that we run predict on a single input at a time.
+            # each individual inference is usually done before the next image arrives, so there's no throughput benefit to batching.
+            results = self.model.predict(
+                image,
+                half=True,  # use fp16
+                save=False,  # don't save to disk, as it slows down the pipeline significantly
+                verbose=False,
+            )
+            completed += 1
+            for res in results:
+                for conf in res.boxes.conf:
+                    if threshold is None:
+                        yield 1
+                        continue
+                    if conf.item() >= threshold:
+                        yield 1
+            yield 0
+
+        elapsed_seconds = (time.monotonic_ns() - start) / 1e9
+        print(
+            "Inferences per second:",
+            round(completed / elapsed_seconds, 2),
+        )
+
+
+# ## Running the example
+
+# We'll kick off our parallel training jobs and run inference from the command line.
+
+# ```bash
+# modal run finetune_yolo.py
+# ```
+
+# This runs the training in `quick_check` mode, useful for debugging the pipeline and getting a feel for it.
+# To do a longer run that actually meaningfully improves performance, use:
+
+# ```bash
+# modal run finetune_yolo.py --no-quick-check
+# ```
+
+
+@app.local_entrypoint()
+def main(quick_check: bool = True, inference_only: bool = False):
+    """Run fine-tuning and inference on two datasets.
+
+    Args:
+        quick_check: fine-tune on a small subset. Lower quality results, but faster iteration.
+        inference_only: skip fine-tuning and only run inference
+    """
+
+    birds = DatasetConfig(
+        workspace_id="birds-s35xe",
+        project_id="birds-u8mti",
+        version=2,
+        format="yolov9",
+        target_class="🐥",
+    )
+    bees = DatasetConfig(
+        workspace_id="bees-tbdsg",
+        project_id="bee-counting",
+        version=11,
+        format="yolov9",
+        target_class="🐝",
+    )
+    datasets = [birds, bees]
+
+    # .for_each runs a function once on each element of the input iterators
+    # here, that means download each dataset, in parallel
+    if not inference_only:
+        download_dataset.for_each(datasets)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    model_ids = [dataset.id + f"/{today}" for dataset in datasets]
+
+    if not inference_only:
+        train.for_each(model_ids, datasets, kwargs={"quick_check": quick_check})
+
+    # let's run inference!
+    for model_id, dataset in zip(model_ids, datasets):
+        inference = Inference(
+            volume_path / "runs" / model_id / "weights" / "best.pt"
+        )
+
+        # predict on a single image and save output to the volume
+        test_images = volume.listdir(
+            str(Path("dataset") / dataset.id / "test" / "images")
+        )
+        # run inference on the first 5 images
+        for ii, image in enumerate(test_images):
+            print(f"{model_id}: Single image prediction on image", image.path)
+            inference.predict.remote(
+                model_id=model_id,
+                image_path=f"{volume_path}/{image.path}",
+                display=(
+                    ii == 0  # display inference results only on first image
+                ),
+            )
+            if ii >= 4:
+                break
+
+        # streaming inference on images from the test set
+        print(
+            f"{model_id}: Streaming inferences on all images in the test set..."
+        )
+        count = 0
+        for detection in inference.streaming_count.remote_gen(
+            batch_dir=f"{volume_path}/dataset/{dataset.id}/test/images"
+        ):
+            if detection:
+                print(f"{dataset.target_class}", end="")
+                count += 1
+            else:
+                print("🎞️", end="", flush=True)
+        print(f"\n{model_id}: Counted {count} {dataset.target_class}s!")
+
+
+# ## Addenda
+
+# The rest of the code in this example is utility code.
+
+warnings.filterwarnings(  # filter warning from the terminal image library
+    "ignore",
+    message="It seems this process is not running within a terminal. Hence, some features will behave differently or be disabled.",
+    category=UserWarning,
+)
+
+```
+
+07_web_endpoints/badges.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/badges.py"]
+# ---
+
+# # Serve a dynamic SVG badge
+
+# In this example, we use Modal's [webhook](https://modal.com/docs/guide/webhooks) capability to host a dynamic SVG badge that shows
+# you the current number of downloads for a Python package.
+
+# First let's start off by creating a Modal app, and defining an image with the Python packages we're going to be using:
+
+import modal
+
+image = modal.Image.debian_slim().pip_install(
+    "fastapi[standard]", "pybadges", "pypistats"
+)
+
+app = modal.App("example-web-badges", image=image)
+
+# ## Defining the web endpoint
+
+# In addition to using `@app.function()` to decorate our function, we use the
+# [`@modal.fastapi_endpoint` decorator](https://modal.com/docs/guide/webhooks)
+# which instructs Modal to create a REST endpoint that serves this function.
+# Note that the default method is `GET`, but this can be overridden using the `method` argument.
+
+
+@app.function()
+@modal.fastapi_endpoint()
+async def package_downloads(package_name: str):
+    import json
+
+    import pypistats
+    from fastapi import Response
+    from pybadges import badge
+
+    stats = json.loads(pypistats.recent(package_name, format="json"))
+    svg = badge(
+        left_text=f"{package_name} downloads",
+        right_text=str(stats["data"]["last_month"]),
+        right_color="blue",
+    )
+
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+# In this function, we use `pypistats` to query the most recent stats for our package, and then
+# use that as the text for a SVG badge, rendered using `pybadges`.
+# Since Modal web endpoints are FastAPI functions under the hood, we return this SVG wrapped in a FastAPI response with the correct media type.
+# Also note that FastAPI automatically interprets `package_name` as a [query param](https://fastapi.tiangolo.com/tutorial/query-params/).
+
+# ## Running and deploying
+
+# We can now run an ephemeral app on the command line using:
+
+# ```shell
+# modal serve badges.py
+# ```
+
+# This will create a short-lived web url that exists until you terminate the script.
+# It will also hot-reload the code if you make changes to it.
+
+# If you want to create a persistent URL, you have to deploy the script.
+# To deploy using the Modal CLI by running `modal deploy badges.py`,
+
+# Either way, as soon as we run this command, Modal gives us the link to our brand new
+# web endpoint in the output:
+
+# ![web badge deployment](./badges_deploy.png)
+
+# We can now visit the link using a web browser, using a `package_name` of our choice in the URL query params.
+# For example:
+# - `https://YOUR_SUBDOMAIN.modal.run/?package_name=synchronicity`
+# - `https://YOUR_SUBDOMAIN.modal.run/?package_name=torch`
+
+```
+
+07_web_endpoints/basic_web.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/basic_web.py"]
+# ---
+
+# # Hello world wide web!
+
+# Modal makes it easy to turn your Python functions into serverless web services:
+# access them via a browser or call them from any client that speaks HTTP, all
+# without having to worry about setting up servers or managing infrastructure.
+
+# This tutorial shows the path with the shortest ["time to 200"](https://shkspr.mobi/blog/2021/05/whats-your-apis-time-to-200/):
+# [`modal.fastapi_endpoint`](https://modal.com/docs/reference/modal.fastapi_endpoint).
+
+# On Modal, web endpoints have all the superpowers of Modal Functions:
+# they can be [accelerated with GPUs](https://modal.com/docs/guide/gpu),
+# they can access [Secrets](https://modal.com/docs/guide/secrets) or [Volumes](https://modal.com/docs/guide/volumes),
+# and they [automatically scale](https://modal.com/docs/guide/cold-start) to handle more traffic.
+
+# Under the hood, we use the [FastAPI library](https://fastapi.tiangolo.com/),
+# which has [high-quality documentation](https://fastapi.tiangolo.com/tutorial/),
+# linked throughout this tutorial.
+
+# ## Turn a Modal Function into an API endpoint with a single decorator
+
+# Modal Functions are already accessible remotely -- when you add the `@app.function` decorator to a Python function
+# and run `modal deploy`, you make it possible for your [other Python functions to call it](https://modal.com/docs/guide/trigger-deployed-functions).
+
+# That's great, but it's not much help if you want to share what you've written with someone running code in a different language --
+# or not running code at all!
+
+# And that's where most of the power of the Internet comes from: sharing information and functionality across different computer systems.
+
+# So we provide the `fastapi_endpoint` decorator to wrap your Modal Functions in the lingua franca of the web: HTTP.
+# Here's what that looks like:
+
+import modal
+
+image = modal.Image.debian_slim().pip_install("fastapi[standard]")
+app = modal.App(name="example-lifecycle-web", image=image)
+
+
+@app.function()
+@modal.fastapi_endpoint(
+    docs=True  # adds interactive documentation in the browser
+)
+def hello():
+    return "Hello world!"
+
+
+# You can turn this function into a web endpoint by running `modal serve basic_web.py`.
+# In the output, you should see a URL that ends with `hello-dev.modal.run`.
+# If you navigate to this URL, you should see the `"Hello world!"` message appear in your browser.
+
+# You can also find interactive documentation, powered by OpenAPI and Swagger,
+# if you add `/docs` to the end of the URL.
+# From this documentation, you can interact with your endpoint, sending HTTP requests and receiving HTTP responses.
+# For more details, see the [FastAPI documentation](https://fastapi.tiangolo.com/features/#automatic-docs).
+
+# By running the endpoint with `modal serve`, you created a temporary endpoint that will disappear if you interrupt your terminal.
+# These temporary endpoints are great for debugging -- when you save a change to any of your dependent files, the endpoint will redeploy.
+# Try changing the message to something else, hitting save, and then hitting refresh in your browser or re-sending
+# the request from `/docs` or the command line. You should see the new message, along with logs in your terminal showing the redeploy and the request.
+
+# When you're ready to deploy this endpoint permanently, run `modal deploy basic_web.py`.
+# Now, your function will be available even when you've closed your terminal or turned off your computer.
+
+# ## Send data to a web endpoint
+
+# The web endpoint above was a bit silly: it always returns the same message.
+
+# Most endpoints need an input to be useful. There are two ways to send data to a web endpoint:
+# - in the URL as a [query parameter](#sending-data-in-query-parameters)
+# - in the [body of the request](#sending-data-in-the-request-body) as JSON
+
+# ### Sending data in query parameters
+
+# By default, your function's arguments are treated as query parameters:
+# they are extracted from the end of the URL, where they should be added in the form
+# `?arg1=foo&arg2=bar`.
+
+# From the Python side, there's hardly anything to do:
+
+
+@app.function()
+@modal.fastapi_endpoint(docs=True)
+def greet(user: str) -> str:
+    return f"Hello {user}!"
+
+
+# If you are already running `modal serve basic_web.py`, this endpoint will be available at a URL, printed in your terminal, that ends with `greet-dev.modal.run`.
+
+# We provide Python type-hints to get type information in the docs and
+# [automatic validation](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/).
+# For example, if you navigate directly to the URL for `greet`, you will get a detailed error message
+# indicating that the `user` parameter is missing. Navigate instead to `/docs` to see how to invoke the endpoint properly.
+
+# You can read more about query parameters in the [FastAPI documentation](https://fastapi.tiangolo.com/tutorial/query-params/).
+
+
+# ### Sending data in the request body
+
+# For larger and more complex data, it is generally preferrable to send data in the body of the HTTP request.
+# This body is formatted as [JSON](https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Objects/JSON),
+# the most common data interchange format on the web.
+
+# To set up an endpoint that accepts JSON data, add an argument with a `dict` type-hint to your function.
+# This argument will be populated with the data sent in the request body.
+
+
+@app.function()
+@modal.fastapi_endpoint(method="POST", docs=True)
+def goodbye(data: dict) -> str:
+    name = data.get("name") or "world"
+    return f"Goodbye {name}!"
+
+
+# Note that we gave a value of `"POST"` for the `method` argument here.
+# This argument defines the HTTP request method that the endpoint will respond to,
+# and it defaults to `"GET"`.
+# If you head to the URL for the `goodbye` endpoint in your browser,
+# you will get a 405 Method Not Allowed error, because browsers only send GET requests by default.
+# While this is technically a separate concern from query parameters versus request bodies
+# and you can define an endpoint that accepts GET requests and uses data from the body,
+# it is [considered bad form](https://stackoverflow.com/a/983458).
+
+# Navigate to `/docs` for more on how to invoke the endpoint properly.
+# You will need to send a POST request with a JSON body containing a `name` key.
+# To get the same typing and validation benefits as with query parameters,
+# use a [Pydantic model](https://fastapi.tiangolo.com/tutorial/body/)
+# for this argument.
+
+# You can read more about request bodies in the [FastAPI documentation](https://fastapi.tiangolo.com/tutorial/body/).
+
+# ## Handle expensive startup with `modal.Cls`
+
+# Sometimes your endpoint needs to do something before it can handle its first request,
+# like get a value from a database or set the value of a variable.
+# If that step is expensive, like [loading a large ML model](https://modal.com/docs/guide/model-weights),
+# it'd be a shame to have to do it every time a request comes in!
+
+# Web endpoints can be methods on a [`modal.Cls`](https://modal.com/docs/guide/lifecycle-functions#container-lifecycle-functions-and-parameters),
+# which allows you to manage
+# Note that they don't need the [`modal.method`](https://modal.com/docs/reference/modal.method) decorator.
+
+# This example will only set the `start_time` instance variable once, on container startup.
+
+
+@app.cls()
+class WebApp:
+    @modal.enter()
+    def startup(self):
+        from datetime import datetime, timezone
+
+        print("🏁 Starting up!")
+        self.start_time = datetime.now(timezone.utc)
+
+    @modal.fastapi_endpoint(docs=True)
+    def web(self):
+        from datetime import datetime, timezone
+
+        current_time = datetime.now(timezone.utc)
+        return {"start_time": self.start_time, "current_time": current_time}
+
+
+# ## Protect web endpoints with proxy authentication
+
+# Sharing your Python functions on the web is great, but it's not always a good idea
+# to make those functions available to just anyone.
+
+# For example, you might have a function like the one below that
+# is more expensive to run than to call (and so might be abused by your enemies)
+# or reveals information that you would rather keep secret.
+
+# To protect your Modal web endpoints so that they can't be triggered except
+# by members of your [Modal workspace](https://modal.com/docs/guide/workspaces),
+# add the `requires_proxy_auth=True` flag to the `fastapi_endpoint` decorator.
+
+
+@app.function(gpu="h100")
+@modal.fastapi_endpoint(requires_proxy_auth=True, docs=False)
+def expensive_secret():
+    return "I didn't care for 'The Godfather'. It insists upon itself."
+
+
+# The `expensive-secret` endpoint URL will still be printed to the output when you `modal serve` or `modal deploy`,
+# along with a "🔑" emoji indicating that it is secured with proxy authentication.
+# If you head to that URL via the browser, you will get a
+# [`407 Proxy Authentication Required`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/407) error code in response.
+# You should also check the dashboard page for this app (at the URL printed at the very top of the `modal` command output)
+# so you can see that no containers were spun up to handle the request -- this authorization is handled entirely inside Modal's infrastructure.
+
+# You can trigger the web endpoint by [creating a Proxy Auth Token](https://modal.com/settings/proxy-auth-tokens)
+# and then including the base64-encoded string `{TOKEN_ID}:{TOKEN_SECRET}` in a
+# [Proxy-Authorization header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Proxy-Authorization).
+
+# From the command line, that might look like
+
+# ```shell
+# export TOKEN_ID=wk-1234abcd
+# export TOKEN_SECRET=ws-1234abcd
+# curl https://your-workspace-name--expensive-secret.modal.run -H "Proxy-Authorization: Basic $(echo -n $TOKEN_ID:$TOKEN_SECRET | base64)"
+# ```
+
+# For more details, see the
+# [guide to proxy authentication](https://modal.com/docs/guide/webhook-proxy-auth).
+
+# ## What next?
+
+# Modal's `fastapi_endpoint` decorator is opinionated and designed for relatively simple web applications --
+# one or a few independent Python functions that you want to expose to the web.
+
+# Three additional decorators allow you to serve more complex web applications with greater control:
+# - [`asgi_app`](https://modal.com/docs/guide/webhooks#asgi) to serve applications compliant with the ASGI standard,
+# like [FastAPI](https://fastapi.tiangolo.com/)
+# - [`wsgi_app`](https://modal.com/docs/guide/webhooks#wsgi) to serve applications compliant with the WSGI standard,
+# like [Flask](https://flask.palletsprojects.com/)
+# - [`web_server`](https://modal.com/docs/guide/webhooks#non-asgi-web-servers) to serve any application that listens on a port
+
+```
+
+07_web_endpoints/count_faces.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/count_faces.py"]
+# ---
+
+# # Run OpenCV face detection on an image
+
+# This example shows how you can use OpenCV on Modal to detect faces in an image. We use
+# the `opencv-python` package to load the image and the `opencv` library to
+# detect faces. The function `count_faces` takes an image as input and returns
+# the number of faces detected in the image.
+
+# The code below also shows how you can create wrap this function
+# in a simple FastAPI server to create a web interface.
+
+import os
+
+import modal
+
+app = modal.App("example-count-faces")
+
+
+open_cv_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("python3-opencv")
+    .pip_install(
+        "fastapi[standard]==0.115.4",
+        "opencv-python~=4.10.0",
+        "numpy<2",
+    )
+)
+
+
+@app.function(image=open_cv_image)
+def count_faces(image_bytes: bytes) -> int:
+    import cv2
+    import numpy as np
+
+    # Example borrowed from https://towardsdatascience.com/face-detection-in-2-minutes-using-opencv-python-90f89d7c0f81
+    # Load the cascade
+    face_cascade = cv2.CascadeClassifier(
+        os.path.join(
+            cv2.data.haarcascades, "haarcascade_frontalface_default.xml"
+        )
+    )
+    # Read the input image
+    np_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(np_bytes, cv2.IMREAD_COLOR)
+    # Convert into grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Detect faces
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    return len(faces)
+
+
+@app.function(
+    image=modal.Image.debian_slim(python_version="3.11").pip_install("inflect")
+)
+@modal.asgi_app()
+def web():
+    import inflect
+    from fastapi import FastAPI, File, HTTPException, UploadFile
+    from fastapi.responses import HTMLResponse
+
+    app = FastAPI()
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index():
+        """
+        Render an HTML form for file upload.
+        """
+        return """
+        <html>
+            <head>
+                <title>Face Counter</title>
+            </head>
+            <body>
+                <h1>Upload an Image to Count Faces</h1>
+                <form action="/process" method="post" enctype="multipart/form-data">
+                    <input type="file" name="file" id="file" accept="image/*" required />
+                    <button type="submit">Upload</button>
+                </form>
+            </body>
+        </html>
+        """
+
+    @app.post("/process", response_class=HTMLResponse)
+    async def process(file: UploadFile = File(...)):
+        """
+        Process the uploaded image and return the number of faces detected.
+        """
+        try:
+            file_content = await file.read()
+            num_faces = await count_faces.remote.aio(file_content)
+            return f"""
+            <html>
+                <head>
+                    <title>Face Counter Result</title>
+                </head>
+                <body>
+                    <h1>{inflect.engine().number_to_words(num_faces).title()} {"Face" if num_faces == 1 else "Faces"} Detected</h1>
+                    <h2>{"😀" * num_faces}</h2>
+                    <a href="/">Go back</a>
+                </body>
+            </html>
+            """
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Error processing image: {str(e)}"
+            )
+
+    return app
+
+```
+
+07_web_endpoints/discord_bot.py:
+```
+# ---
+# deploy: true
+# ---
+
+# # Serve a Discord Bot on Modal
+
+# In this example we will demonstrate how to use Modal to build and serve a Discord bot that uses
+# [slash commands](https://discord.com/developers/docs/interactions/application-commands).
+
+# Slash commands send information from Discord server members to a service at a URL.
+# Here, we set up a simple [FastAPI app](https://fastapi.tiangolo.com/)
+# to run that service and deploy it easily  Modal’s
+# [`@asgi_app`](https://modal.com/docs/guide/webhooks#serving-asgi-and-wsgi-apps) decorator.
+
+# As our example service, we hit a simple free API:
+# the [Free Public APIs API](https://www.freepublicapis.com/api),
+# a directory of free public APIs.
+
+# [Try it out on Discord](https://discord.gg/PmG7P47EPQ)!
+
+# ## Set up our App and its Image
+
+# First, we define the [container image](https://modal.com/docs/guide/images)
+# that all the pieces of our bot will run in.
+
+# We set that as the default image for a Modal [App](https://modal.com/docs/guide/apps).
+# The App is where we'll attach all the components of our bot.
+
+import json
+from enum import Enum
+
+import modal
+
+image = modal.Image.debian_slim(python_version="3.11").pip_install(
+    "fastapi[standard]==0.115.4", "pynacl~=1.5.0", "requests~=2.32.3"
+)
+
+app = modal.App("example-discord-bot", image=image)
+
+# ## Hit the Free Public APIs API
+
+# We start by defining the core service that our bot will provide.
+
+# In a real application, this might be [music generation](https://modal.com/docs/examples/musicgen),
+# a [chatbot](https://modal.com/docs/examples/chat_with_pdf_vision),
+# or [interacting with a database](https://modal.com/docs/examples/covid_datasette).
+
+# Here, we just hit a simple free public API:
+# the [Free Public APIs](https://www.freepublicapis.com) API,
+# an "API of APIs" that returns information about free public APIs,
+# like the [Global Shark Attack API](https://www.freepublicapis.com/global-shark-attack-api)
+# and the [Corporate Bullshit Generator](https://www.freepublicapis.com/corporate-bullshit-generator).
+# We convert the response into a Markdown-formatted message.
+
+# We turn our Python function into a Modal Function by attaching the `app.function` decorator.
+# We make the function `async` and set `allow_concurrent_inputs` to a large value because
+# communicating with an external API is a classic case for better performance from asynchronous execution.
+# Modal handles things like the async event loop for us.
+
+
+@app.function(allow_concurrent_inputs=1000)
+async def fetch_api() -> str:
+    import aiohttp
+
+    url = "https://www.freepublicapis.com/api/random"
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                data = await response.json()
+                message = f"# {data.get('emoji') or '🤖'} [{data['title']}]({data['source']})"
+                message += f"\n _{''.join(data['description'].splitlines())}_"
+        except Exception as e:
+            message = f"# 🤖: Oops! {e}"
+
+    return message
+
+
+# This core component has nothing to do with Discord,
+# and it's nice to be able to interact with and test it in isolation.
+
+# For that, we add a `local_entrypoint` that calls the Modal Function.
+# Notice that we add `.remote` to the function's name.
+
+# Later, when you replace this component of the app with something more interesting,
+# test it by triggering this entrypoint with  `modal run discord_bot.py`.
+
+
+@app.local_entrypoint()
+def test_fetch_api():
+    result = fetch_api.remote()
+    if result.startswith("# 🤖: Oops! "):
+        raise Exception(result)
+    else:
+        print(result)
+
+
+# ## Integrate our Modal Function with Discord Interactions
+
+# Now we need to map this function onto Discord's interface --
+# in particular the [Interactions API](https://discord.com/developers/docs/interactions/overview).
+
+# Reviewing the documentation, we see that we need to send a JSON payload
+# to a specific API URL that will include an `app_id` that identifies our bot
+# and a `token` that identifies the interaction (loosely, message) that we're participating in.
+
+# So let's write that out. This function doesn't need to live on Modal,
+# since it's just encapsulating some logic -- we don't want to turn it into a service or an API on its own.
+# That means we don't need any Modal decorators.
+
+
+async def send_to_discord(payload: dict, app_id: str, interaction_token: str):
+    import aiohttp
+
+    interaction_url = f"https://discord.com/api/v10/webhooks/{app_id}/{interaction_token}/messages/@original"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(interaction_url, json=payload) as resp:
+            print("🤖 Discord response: " + await resp.text())
+
+
+# Other parts of our application might want to both hit the Free Public APIs API and send the result to Discord,
+# so we both write a Python function for this and we promote it to a Modal Function with a decorator.
+
+# Notice that we use the `.local` suffix to call our `fetch_api` Function. That means we run
+# the Function the same way we run all the other Python functions, rather than treating it as a special
+# Modal Function. This reduces a bit of extra latency, but couples these two Functions more tightly.
+
+
+@app.function(allow_concurrent_inputs=1000)
+async def reply(app_id: str, interaction_token: str):
+    message = await fetch_api.local()
+    await send_to_discord({"content": message}, app_id, interaction_token)
+
+
+# ## Set up a Discord app
+
+# Now, we need to actually connect to Discord.
+# We start by creating an application on the Discord Developer Portal.
+
+# 1. Go to the
+#    [Discord Developer Portal](https://discord.com/developers/applications) and
+#    log in with your Discord account.
+# 2. On the portal, go to **Applications** and create a new application by
+#    clicking **New Application** in the top right next to your profile picture.
+# 3. [Create a custom Modal Secret](https://modal.com/docs/guide/secrets) for your Discord bot.
+#    On Modal's Secret creation page, select 'Discord'. Copy your Discord application’s
+#    **Public Key** and **Application ID** (from the **General Information** tab in the Discord Developer Portal)
+#    and paste them as the value of `DISCORD_PUBLIC_KEY` and `DISCORD_CLIENT_ID`.
+#    Additionally, head to the **Bot** tab and use the **Reset Token** button to create a new bot token.
+#    Paste this in the value of an additional key in the Secret, `DISCORD_BOT_TOKEN`.
+#    Name this Secret `discord-secret`.
+
+# We access that Secret in code like so:
+
+discord_secret = modal.Secret.from_name(
+    "discord-secret",
+    required_keys=[  # included so we get nice error messages if we forgot a key
+        "DISCORD_BOT_TOKEN",
+        "DISCORD_CLIENT_ID",
+        "DISCORD_PUBLIC_KEY",
+    ],
+)
+
+# ## Register a Slash Command
+
+# Next, we’re going to register a [Slash Command](https://discord.com/developers/docs/interactions/application-commands#slash-commands)
+# for our Discord app. Slash Commands are triggered by users in servers typing `/` and the name of the command.
+
+# The Modal Function below will register a Slash Command for your bot named `bored`.
+# More information about Slash Commands can be found in the Discord docs
+# [here](https://discord.com/developers/docs/interactions/application-commands).
+
+# You can run this Function with
+
+# ```bash
+# modal run discord_bot::create_slash_command
+# ```
+
+
+@app.function(secrets=[discord_secret], image=image)
+def create_slash_command(force: bool = False):
+    """Registers the slash command with Discord. Pass the force flag to re-register."""
+    import os
+
+    import requests
+
+    BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+    CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bot {BOT_TOKEN}",
+    }
+    url = f"https://discord.com/api/v10/applications/{CLIENT_ID}/commands"
+
+    command_description = {
+        "name": "api",
+        "description": "Information about a random free, public API",
+    }
+
+    # first, check if the command already exists
+    response = requests.get(url, headers=headers)
+    try:
+        response.raise_for_status()
+    except Exception as e:
+        raise Exception("Failed to create slash command") from e
+
+    commands = response.json()
+    command_exists = any(
+        command.get("name") == command_description["name"]
+        for command in commands
+    )
+
+    # and only recreate it if the force flag is set
+    if command_exists and not force:
+        print(f"🤖: command {command_description['name']} exists")
+        return
+
+    response = requests.post(url, headers=headers, json=command_description)
+    try:
+        response.raise_for_status()
+    except Exception as e:
+        raise Exception("Failed to create slash command") from e
+    print(f"🤖: command {command_description['name']} created")
+
+
+# ## Host a Discord Interactions endpoint on Modal
+
+# If you look carefully at the definition of the Slash Command above,
+# you'll notice that it doesn't know anything about our bot besides an ID.
+
+# To hook the Slash Commands in the Discord UI up to our logic for hitting the Bored API,
+# we need to set up a service that listens at some URL and follows a specific protocol,
+# described [here](https://discord.com/developers/docs/interactions/overview#configuring-an-interactions-endpoint-url).
+
+# Here are some of the most important facets:
+
+# 1. We'll need to respond within five seconds or Discord will assume we are dead.
+# Modal's fast-booting serverless containers usually start faster than that,
+# but it's not guaranteed. So we'll add the `min_containers` parameter to our
+# Function so that there's at least one live copy ready to respond quickly at any time.
+# Modal charges a minimum of about 2¢ an hour for live containers (pricing details [here](https://modal.com/pricing)).
+# Note that that still fits within Modal's $30/month of credits on the free tier.
+
+# 2. We have to respond to Discord that quickly, but we don't have to respond to the user that quickly.
+# We instead send an acknowledgement so that they know we're alive and they can close their connection to us.
+# We also trigger our `reply` Modal Function, which will respond to the user via Discord's Interactions API,
+# but we don't wait for the result, we just `spawn` the call.
+
+# 3. The protocol includes some authentication logic that is mandatory
+# and checked by Discord. We'll explain in more detail in the next section.
+
+# We can set up our interaction endpoint by deploying a FastAPI app on Modal.
+# This is as easy as creating a Python Function that returns a FastAPI app
+# and adding the `modal.asgi_app` decorator.
+# For more details on serving Python web apps on Modal, see
+# [this guide](https://modal.com/docs/guide/webhooks).
+
+
+@app.function(
+    secrets=[discord_secret], min_containers=1, allow_concurrent_inputs=1000
+)
+@modal.asgi_app()
+def web_app():
+    from fastapi import FastAPI, HTTPException, Request
+    from fastapi.middleware.cors import CORSMiddleware
+
+    web_app = FastAPI()
+
+    # must allow requests from other domains, e.g. from Discord's servers
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @web_app.post("/api")
+    async def get_api(request: Request):
+        body = await request.body()
+
+        # confirm this is a request from Discord
+        authenticate(request.headers, body)
+
+        print("🤖: parsing request")
+        data = json.loads(body.decode())
+        if data.get("type") == DiscordInteractionType.PING.value:
+            print("🤖: acking PING from Discord during auth check")
+            return {"type": DiscordResponseType.PONG.value}
+
+        if data.get("type") == DiscordInteractionType.APPLICATION_COMMAND.value:
+            print("🤖: handling slash command")
+            app_id = data["application_id"]
+            interaction_token = data["token"]
+
+            # kick off request asynchronously, will respond when ready
+            reply.spawn(app_id, interaction_token)
+
+            # respond immediately with defer message
+            return {
+                "type": DiscordResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE.value
+            }
+
+        print(f"🤖: unable to parse request with type {data.get('type')}")
+        raise HTTPException(status_code=400, detail="Bad request")
+
+    return web_app
+
+
+# The authentication for Discord is a bit involved and there aren't,
+# to our knowledge, any good Python libraries for it.
+
+# So we have to implement the protocol "by hand".
+
+# Essentially, Discord sends a header in their request
+# that we can use to verify the request comes from them.
+# For that, we use the `DISCORD_PUBLIC_KEY` from
+# our Application Information page.
+
+# The details aren't super important, but they appear in the `authenticate` function below
+# (which defers the real cryptography work to [PyNaCl](https://pypi.org/project/PyNaCl/),
+# a Python wrapper for [`libsodium`](https://github.com/jedisct1/libsodium)).
+
+# Discord will also check that we reject unauthorized requests,
+# so we have to be sure to get this right!
+
+
+def authenticate(headers, body):
+    import os
+
+    from fastapi.exceptions import HTTPException
+    from nacl.exceptions import BadSignatureError
+    from nacl.signing import VerifyKey
+
+    print("🤖: authenticating request")
+    # verify the request is from Discord using their public key
+    public_key = os.getenv("DISCORD_PUBLIC_KEY")
+    verify_key = VerifyKey(bytes.fromhex(public_key))
+
+    signature = headers.get("X-Signature-Ed25519")
+    timestamp = headers.get("X-Signature-Timestamp")
+
+    message = timestamp.encode() + body
+
+    try:
+        verify_key.verify(message, bytes.fromhex(signature))
+    except BadSignatureError:
+        # either an unauthorized request or Discord's "negative control" check
+        raise HTTPException(status_code=401, detail="Invalid request")
+
+
+# The code above used a few enums to abstract bits of the Discord protocol.
+# Now that we've walked through all of it,
+# we're in a position to understand what those are
+# and so the code for them appears below.
+
+
+class DiscordInteractionType(Enum):
+    PING = 1  # hello from Discord during auth check
+    APPLICATION_COMMAND = 2  # an actual command
+
+
+class DiscordResponseType(Enum):
+    PONG = 1  # hello back during auth check
+    DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE = 5  # we'll send a message later
+
+
+# ## Deploy on Modal
+
+# You can deploy this app on Modal by running the following commands:
+
+# ``` shell
+# modal run discord_bot.py  # checks the API wrapper, little test
+# modal run discord_bot.py::create_slash_command  # creates the slash command, if missing
+# modal deploy discord_bot.py  # deploys the web app and the API wrapper
+# ```
+
+# Copy the Modal URL that is printed in the output and go back to the **General Information** section on the
+# [Discord Developer Portal](https://discord.com/developers/applications).
+# Paste the URL, making sure to append the path of your `POST` route (here, `/api`), in the
+# **Interactions Endpoint URL** field, then click **Save Changes**. If your
+# endpoint URL is incorrect or if authentication is incorrectly implemented,
+# Discord will refuse to save the URL. Once it saves, you can start
+# handling interactions!
+
+# ## Finish setting up Discord bot
+
+# To start using the Slash Command you just set up, you need to invite the bot to
+# a Discord server. To do so, go to your application's **Installation** section on the
+# [Discord Developer Portal](https://discord.com/developers/applications).
+# Copy the **Discored Provided Link** and visit it to invite the bot to your bot to the server.
+
+# Now you can open your Discord server and type `/api` in a channel to trigger the bot.
+# You can see a working version [in our test Discord server](https://discord.gg/PmG7P47EPQ).
+
+```
+
+07_web_endpoints/fastapi_app.py:
+```
+# ---
+# lambda-test: false
+# ---
+
+# # Deploy FastAPI app with Modal
+
+# This example shows how you can deploy a [FastAPI](https://fastapi.tiangolo.com/) app with Modal.
+# You can serve any app written in an ASGI-compatible web framework (like FastAPI) using this pattern or you can server WSGI-compatible frameworks like Flask with [`wsgi_app`](https://modal.com/docs/guide/webhooks#wsgi).
+
+from typing import Optional
+
+import modal
+from fastapi import FastAPI, Header
+from pydantic import BaseModel
+
+image = modal.Image.debian_slim().pip_install("fastapi[standard]", "pydantic")
+app = modal.App("example-fastapi-app", image=image)
+web_app = FastAPI()
+
+
+class Item(BaseModel):
+    name: str
+
+
+@web_app.get("/")
+async def handle_root(user_agent: Optional[str] = Header(None)):
+    print(f"GET /     - received user_agent={user_agent}")
+    return "Hello World"
+
+
+@web_app.post("/foo")
+async def handle_foo(item: Item, user_agent: Optional[str] = Header(None)):
+    print(
+        f"POST /foo - received user_agent={user_agent}, item.name={item.name}"
+    )
+    return item
+
+
+@app.function()
+@modal.asgi_app()
+def fastapi_app():
+    return web_app
+
+
+@app.function()
+@modal.fastapi_endpoint(method="POST")
+def f(item: Item):
+    return "Hello " + item.name
+
+
+if __name__ == "__main__":
+    app.deploy("webapp")
+
+```
+
+07_web_endpoints/fasthtml-checkboxes\cbx_load_test.py:
+```
+import os
+from datetime import datetime
+from pathlib import Path
+
+import modal
+
+if modal.is_local():
+    workspace = modal.config._profile or ""
+    environment = modal.config.config["environment"] or ""
+else:
+    workspace = os.environ["MODAL_WORKSPACE"] or ""
+    environment = os.environ["MODAL_ENVIRONMENT"] or ""
+
+
+image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install("locust~=2.29.1", "beautifulsoup4~=4.12.3", "lxml~=5.3.0")
+    .env({"MODAL_WORKSPACE": workspace, "MODAL_ENVIRONMENT": environment})
+    .add_local_file(
+        Path(__file__).parent / "cbx_locustfile.py",
+        remote_path="/root/locustfile.py",
+    )
+    .add_local_file(
+        Path(__file__).parent / "constants.py",
+        remote_path="/root/constants.py",
+    )
+)
+volume = modal.Volume.from_name(
+    "loadtest-checkboxes-results", create_if_missing=True
+)
+remote_path = Path("/root") / "loadtests"
+OUT_DIRECTORY = (
+    remote_path / datetime.utcnow().replace(microsecond=0).isoformat()
+)
+
+app = modal.App("loadtest-checkbox", image=image, volumes={remote_path: volume})
+
+workers = 8
+host = f"https://{workspace}{'-' + environment if environment else ''}--example-checkboxes-web.modal.run"
+csv_file = OUT_DIRECTORY / "stats.csv"
+default_args = [
+    "-H",
+    host,
+    "--processes",
+    str(workers),
+    "--csv",
+    csv_file,
+]
+
+MINUTES = 60  # seconds
+
+
+@app.function(allow_concurrent_inputs=1000, cpu=workers)
+@modal.web_server(port=8089)
+def serve():
+    run_locust.local(default_args)
+
+
+@app.function(cpu=workers, timeout=60 * MINUTES)
+def run_locust(args: list, wait=False):
+    import subprocess
+
+    process = subprocess.Popen(["locust"] + args)
+    if wait:
+        process.wait()
+        return process.returncode
+
+
+@app.local_entrypoint()
+def main(
+    r: float = 1.0,
+    u: int = 36,
+    t: str = "1m",  # no more than the timeout of run_locust, one hour
+):
+    args = default_args + [
+        "--spawn-rate",
+        str(r),
+        "--users",
+        str(u),
+        "--run-time",
+        t,
+    ]
+
+    html_report_file = OUT_DIRECTORY / "report.html"
+    args += [
+        "--headless",  # run without browser UI
+        "--autostart",  # start test immediately
+        "--autoquit",  # stop once finished...
+        "10",  # ...but wait ten seconds
+        "--html",  # output an HTML-formatted report
+        html_report_file,  # to this location
+    ]
+
+    if exit_code := run_locust.remote(args, wait=True):
+        SystemExit(exit_code)
+    else:
+        print("finished successfully")
+
+```
+
+07_web_endpoints/fasthtml-checkboxes\cbx_locustfile.py:
+```
+# ---
+# lambda-test: false
+# pytest: false
+# ---
+import random
+
+from bs4 import BeautifulSoup
+from constants import N_CHECKBOXES
+from locust import HttpUser, between, task
+
+
+class CheckboxesUser(HttpUser):
+    wait_time = between(0.01, 0.1)  # Simulates a wait time between requests
+
+    def load_homepage(self):
+        """
+        Simulates a user loading the homepage and fetching the state of the checkboxes.
+        """
+        response = self.client.get("/")
+        soup = BeautifulSoup(response.text, "lxml")
+        main_div = soup.find("main")
+        self.id = main_div["hx-get"].split("/")[-1]
+
+    @task(10)
+    def toggle_random_checkboxes(self):
+        """
+        Simulates a user toggling a random checkbox.
+        """
+        n_checkboxes = random.binomialvariate(  # approximately poisson at 10
+            n=100,
+            p=0.1,
+        )
+        for _ in range(min(n_checkboxes, 1)):
+            checkbox_id = int(
+                N_CHECKBOXES * random.random() ** 2
+            )  # Choose a random checkbox between 0 and 9999, more likely to be closer to 0
+            self.client.post(
+                f"/checkbox/toggle/{checkbox_id}",
+                name="/checkbox/toggle",
+            )
+
+    @task(1)
+    def poll_for_diffs(self):
+        """
+        Simulates a user polling for any outstanding diffs.
+        """
+        self.client.get(f"/diffs/{self.id}", name="/diffs")
+
+    def on_start(self):
+        """
+        Called when a simulated user starts, typically used to initialize or login a user.
+        """
+        self.id = str(random.randint(1, 9999))
+        self.load_homepage()
+
+```
+
+07_web_endpoints/fasthtml-checkboxes\constants.py:
+```
+# ---
+# lambda-test: false
+# ---
+N_CHECKBOXES = 100_000  # feel free to increase, if you dare!
+
+```
+
+07_web_endpoints/fasthtml-checkboxes\fasthtml_checkboxes.py:
+```
+# ---
+# cmd: ["modal", "serve", "-m", "07_web_endpoints.fasthtml-checkboxes.fasthtml_checkboxes"]
+# deploy: true
+# mypy: ignore-errors
+# ---
+
+# # Deploy 100,000 multiplayer checkboxes on Modal with FastHTML
+
+# [![Screenshot of FastHTML Checkboxes UI](./ui.png)](https://modal-labs-examples--example-checkboxes-web.modal.run)
+
+# This example shows how you can deploy a multiplayer checkbox game with FastHTML on Modal.
+
+# [FastHTML](https://www.fastht.ml/) is a Python library built on top of [HTMX](https://htmx.org/)
+# which allows you to create entire web applications using only Python.
+# For a simpler template for using FastHTML with Modal, check out
+# [this example](https://modal.com/docs/examples/fasthtml_app).
+
+# Our example is inspired by [1 Million Checkboxes](https://onemillioncheckboxes.com/).
+
+import time
+from asyncio import Lock
+from pathlib import Path
+from uuid import uuid4
+
+import modal
+
+from .constants import N_CHECKBOXES
+
+app = modal.App("example-checkboxes")
+db = modal.Dict.from_name("example-checkboxes-db", create_if_missing=True)
+
+css_path_local = Path(__file__).parent / "styles.css"
+css_path_remote = "/assets/styles.css"
+
+
+@app.function(
+    image=modal.Image.debian_slim(python_version="3.12")
+    .pip_install("python-fasthtml==0.6.9", "inflect~=7.4.0")
+    .add_local_file(css_path_local, remote_path=css_path_remote),
+    max_containers=1,  # we currently maintain state in memory, so we restrict the server to one worker
+    allow_concurrent_inputs=1000,
+)
+@modal.asgi_app()
+def web():
+    import fasthtml.common as fh
+    import inflect
+
+    # Connected clients are tracked in-memory
+    clients = {}
+    clients_mutex = Lock()
+
+    # We keep all checkbox fasthtml elements in memory during operation, and persist to modal dict across restarts
+    checkboxes = db.get("checkboxes", [])
+    checkbox_mutex = Lock()
+
+    if len(checkboxes) == N_CHECKBOXES:
+        print("Restored checkbox state from previous session.")
+    else:
+        print("Initializing checkbox state.")
+        checkboxes = []
+        for i in range(N_CHECKBOXES):
+            checkboxes.append(
+                fh.Input(
+                    id=f"cb-{i}",
+                    type="checkbox",
+                    checked=False,
+                    # when clicked, that checkbox will send a POST request to the server with its index
+                    hx_post=f"/checkbox/toggle/{i}",
+                    hx_swap_oob="true",  # allows us to later push diffs to arbitrary checkboxes by id
+                )
+            )
+
+    async def on_shutdown():
+        # Handle the shutdown event by persisting current state to modal dict
+        async with checkbox_mutex:
+            db["checkboxes"] = checkboxes
+        print("Checkbox state persisted.")
+
+    style = open(css_path_remote, "r").read()
+    app, _ = fh.fast_app(
+        # FastHTML uses the ASGI spec, which allows handling of shutdown events
+        on_shutdown=[on_shutdown],
+        hdrs=[fh.Style(style)],
+    )
+
+    # handler run on initial page load
+    @app.get("/")
+    async def get():
+        # register a new client
+        client = Client()
+        async with clients_mutex:
+            clients[client.id] = client
+
+        return (
+            fh.Title(f"{N_CHECKBOXES // 1000}k Checkboxes"),
+            fh.Main(
+                fh.H1(
+                    f"{inflect.engine().number_to_words(N_CHECKBOXES).title()} Checkboxes"
+                ),
+                fh.Div(
+                    *checkboxes,
+                    id="checkbox-array",
+                ),
+                cls="container",
+                # use HTMX to poll for diffs to apply
+                hx_trigger="every 1s",  # poll every second
+                hx_get=f"/diffs/{client.id}",  # call the diffs endpoint
+                hx_swap="none",  # don't replace the entire page
+            ),
+        )
+
+    # users submitting checkbox toggles
+    @app.post("/checkbox/toggle/{i}")
+    async def toggle(i: int):
+        async with checkbox_mutex:
+            cb = checkboxes[i]
+            cb.checked = not cb.checked
+            checkboxes[i] = cb
+
+        async with clients_mutex:
+            expired = []
+            for client in clients.values():
+                # clean up old clients
+                if not client.is_active():
+                    expired.append(client.id)
+
+                # add diff to client for when they next poll
+                client.add_diff(i)
+
+            for client_id in expired:
+                del clients[client_id]
+        return
+
+    # clients polling for any outstanding diffs
+    @app.get("/diffs/{client_id}")
+    async def diffs(client_id: str):
+        # we use the `hx_swap_oob='true'` feature to
+        # push updates only for the checkboxes that changed
+        async with clients_mutex:
+            client = clients.get(client_id, None)
+            if client is None or len(client.diffs) == 0:
+                return
+
+            client.heartbeat()
+            diffs = client.pull_diffs()
+
+        async with checkbox_mutex:
+            diff_array = [checkboxes[i] for i in diffs]
+
+        return diff_array
+
+    return app
+
+
+# Class for tracking state to push out to connected clients
+class Client:
+    def __init__(self):
+        self.id = str(uuid4())
+        self.diffs = []
+        self.inactive_deadline = time.time() + 30
+
+    def is_active(self):
+        return time.time() < self.inactive_deadline
+
+    def heartbeat(self):
+        self.inactive_deadline = time.time() + 30
+
+    def add_diff(self, i):
+        if i not in self.diffs:
+            self.diffs.append(i)
+
+    def pull_diffs(self):
+        # return a copy of the diffs and clear them
+        diffs = self.diffs
+        self.diffs = []
+        return diffs
+
+```
+
+07_web_endpoints/fasthtml-checkboxes\styles.css:
+```
+/* This file is used to override the default pico.css styles. */
+
+body {
+    background-color: #1d1d1d;
+}
+
+.container {
+    padding: 2rem;
+    width: 100%;
+    max-width: 100%;
+}
+
+[type="checkbox"]:is(:checked, :checked:focus) {
+    --pico-border-color: #7fee64;
+    --pico-background-color: #7fee64;
+}
+
+[type="checkbox"]:not(:checked, :checked:focus) {
+    --pico-border-color: rgba(255, 255, 255, 0.2);
+    --pico-background-color: rgba(255, 255, 255, 0.05);
+}
+
+:where(select, textarea):not([readonly]):focus,
+input:not([type=submit], [type=button], [type=reset], [type=range], [type=file], [readonly]):focus {
+    --pico-box-shadow: 0 0 0 var(--pico-outline-width) rgba(127, 238, 100, 0.25);
+    --pico-border-color: rgba(127, 238, 100, 0.50);
+}
+
+```
+
+07_web_endpoints/fasthtml_app.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/fasthtml_app.py"]
+# ---
+
+# # Deploy a FastHTML app with Modal
+
+# This example shows how you can deploy a FastHTML app with Modal.
+# [FastHTML](https://www.fastht.ml/) is a Python library built on top of [HTMX](https://htmx.org/)
+# which allows you to create entire web applications using only Python.
+
+# The integration is pretty simple, thanks to the ASGI standard.
+# You just need to define a function returns your FastHTML app
+# and is decorated with `app.function` and `modal.asgi_app`.
+
+import modal
+
+app = modal.App("example-fasthtml")
+
+
+@app.function(
+    image=modal.Image.debian_slim(python_version="3.12").pip_install(
+        "python-fasthtml==0.5.2"
+    )
+)
+@modal.asgi_app()
+def serve():
+    import fasthtml.common as fh
+
+    app = fh.FastHTML()
+
+    @app.get("/")
+    def home():
+        return fh.Div(fh.P("Hello World!"), hx_get="/change")
+
+    return app
+
+```
+
+07_web_endpoints/flask_app.py:
+```
+# ---
+# lambda-test: false
+# ---
+
+# # Deploy Flask app with Modal
+
+# This example shows how you can deploy a [Flask](https://flask.palletsprojects.com/en/3.0.x/) app with Modal.
+# You can serve any app written in a WSGI-compatible web framework (like Flask) on Modal with this pattern. You can serve an app written in an ASGI-compatible framework, like FastAPI, with [`asgi_app`](https://modal.com/docs/guide/webhooks#asgi).
+
+import modal
+
+app = modal.App(
+    "example-web-flask",
+    image=modal.Image.debian_slim().pip_install("flask"),
+)
+
+
+@app.function()
+@modal.wsgi_app()
+def flask_app():
+    from flask import Flask, request
+
+    web_app = Flask(__name__)
+
+    @web_app.get("/")
+    def home():
+        return "Hello Flask World!"
+
+    @web_app.post("/foo")
+    def foo():
+        return request.json
+
+    return web_app
+
+```
+
+07_web_endpoints/flask_streaming.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/flask_streaming.py"]
+# ---
+
+# # Deploy Flask app with streaming results with Modal
+
+# This example shows how you can deploy a [Flask](https://flask.palletsprojects.com/en/3.0.x/) app with Modal that streams results back to the client.
+
+import modal
+
+app = modal.App(
+    "example-web-flask-stream",
+    image=modal.Image.debian_slim().pip_install("flask"),
+)
+
+
+@app.function()
+def generate_rows():
+    """
+    This creates a large CSV file, about 10MB, which will be streaming downloaded
+    by a web client.
+    """
+    for i in range(10_000):
+        line = ",".join(str((j + i) * i) for j in range(128))
+        yield f"{line}\n"
+
+
+@app.function()
+@modal.wsgi_app()
+def flask_app():
+    from flask import Flask
+
+    web_app = Flask(__name__)
+
+    # These web handlers follow the example from
+    # https://flask.palletsprojects.com/en/2.2.x/patterns/streaming/
+
+    @web_app.route("/")
+    def generate_large_csv():
+        # Run the function locally in the web app's container.
+        return generate_rows.local(), {"Content-Type": "text/csv"}
+
+    @web_app.route("/remote")
+    def generate_large_csv_in_container():
+        # Run the function remotely in a separate container,
+        # which will stream back results to the web app container,
+        # which will stream back to the web client.
+        #
+        # This is less efficient, but demonstrates how web serving
+        # containers can be separated from and cooperate with other
+        # containers.
+        return generate_rows.remote(), {"Content-Type": "text/csv"}
+
+    return web_app
+
+```
+
+07_web_endpoints/streaming.py:
+```
+# ---
+# cmd: ["modal", "serve", "07_web_endpoints/streaming.py"]
+# ---
+
+# # Deploy a FastAPI app with streaming responses
+
+# This example shows how you can deploy a [FastAPI](https://fastapi.tiangolo.com/) app with Modal that streams results back to the client.
+
+import asyncio
+import time
+
+import modal
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+image = modal.Image.debian_slim().pip_install("fastapi[standard]")
+app = modal.App("example-fastapi-streaming", image=image)
+
+web_app = FastAPI()
+
+# This asynchronous generator function simulates
+# progressively returning data to the client. The `asyncio.sleep`
+# is not necessary, but makes it easier to see the iterative behavior
+# of the response.
+
+
+async def fake_video_streamer():
+    for i in range(10):
+        yield f"frame {i}: hello world!".encode()
+        await asyncio.sleep(1.0)
+
+
+# ASGI app with streaming handler.
+
+# This `fastapi_app` also uses the fake video streamer async generator,
+# passing it directly into `StreamingResponse`.
+
+
+@web_app.get("/")
+async def main():
+    return StreamingResponse(
+        fake_video_streamer(), media_type="text/event-stream"
+    )
+
+
+@app.function()
+@modal.asgi_app()
+def fastapi_app():
+    return web_app
+
+
+# This `hook` web endpoint Modal function calls *another* Modal function,
+# and it just works!
+
+
+@app.function()
+def sync_fake_video_streamer():
+    for i in range(10):
+        yield f"frame {i}: some data\n".encode()
+        time.sleep(1)
+
+
+@app.function()
+@modal.fastapi_endpoint()
+def hook():
+    return StreamingResponse(
+        sync_fake_video_streamer.remote_gen(), media_type="text/event-stream"
+    )
+
+
+# This `mapped` web endpoint Modal function does a parallel `.map` on a simple
+# Modal function. Using `.starmap` also would work in the same fashion.
+
+
+@app.function()
+def map_me(i):
+    time.sleep(i)  # stagger the results for demo purposes
+    return f"hello from {i}\n"
+
+
+@app.function()
+@modal.fastapi_endpoint()
+def mapped():
+    return StreamingResponse(
+        map_me.map(range(10)), media_type="text/event-stream"
+    )
+
+
+# To try for yourself, run
+
+# ```shell
+# modal serve streaming.py
+# ```
+
+# and then send requests to the URLs that appear in the terminal output.
+
+# Make sure that your client is not buffering the server response
+# until it gets newline (\n) characters. By default browsers and `curl` are buffering,
+# though modern browsers should respect the "text/event-stream" content type header being set.
+
+```
+
+08_advanced/generators_async.py:
+```
+# # Run async generator function on Modal
+
+# This example shows how you can run an async generator function on Modal.
+# Modal natively supports async/await syntax using asyncio.
+
+import modal
+
+app = modal.App("example-generators-async")
+
+
+@app.function()
+def f(i):
+    for j in range(i):
+        yield j
+
+
+@app.local_entrypoint()
+async def run_async():
+    async for r in f.remote_gen.aio(10):
+        print(r)
+
+```
+
+08_advanced/hello_world_async.py:
+```
+# # Async functions
+#
+# Modal natively supports async/await syntax using asyncio.
+
+# First, let's import some global stuff.
+
+import sys
+
+import modal
+
+app = modal.App("example-hello-world-async")
+
+
+# ## Defining a function
+#
+# Now, let's define a function. The wrapped function can be synchronous or
+# asynchronous, but calling it in either context will still work.
+# Let's stick to a normal synchronous function
+
+
+@app.function()
+def f(i):
+    if i % 2 == 0:
+        print("hello", i)
+    else:
+        print("world", i, file=sys.stderr)
+
+    return i * i
+
+
+# ## Running the app with asyncio
+#
+# Let's make the main entrypoint asynchronous. In async contexts, we should
+# call the function using `await` or iterate over the map using `async for`.
+# Otherwise we would block the event loop while our call is being run.
+
+
+@app.local_entrypoint()
+async def run_async():
+    # Call the function using .remote.aio() in order to run it asynchronously
+    print(await f.remote.aio(1000))
+
+    # Parallel map.
+    total = 0
+    # Call .map asynchronously using using f.map.aio(...)
+    async for ret in f.map.aio(range(20)):
+        total += ret
+
+    print(total)
+
+```
+
+08_advanced/parallel_execution.py:
+```
+# # Parallel execution on Modal with `spawn` and `gather`
+
+# This example shows how you can run multiple functions in parallel on Modal.
+# We use the `spawn` method to start a function and return a handle to its result.
+# The `get` method is used to retrieve the result of the function call.
+
+import time
+
+import modal
+
+app = modal.App("example-parallel")
+
+
+@app.function()
+def step1(word):
+    time.sleep(2)
+    print("step1 done")
+    return word
+
+
+@app.function()
+def step2(number):
+    time.sleep(1)
+    print("step2 done")
+    if number == 0:
+        raise ValueError("custom error")
+    return number
+
+
+@app.local_entrypoint()
+def main():
+    # Start running a function and return a handle to its result.
+    word_call = step1.spawn("foo")
+    number_call = step2.spawn(2)
+
+    # Print "foofoo" after 2 seconds.
+    print(word_call.get() * number_call.get())
+
+    # Alternatively, use `modal.FunctionCall.gather(...)` as a convenience wrapper,
+    # which returns an error if either call fails.
+    results = modal.FunctionCall.gather(step1.spawn("bar"), step2.spawn(4))
+    assert results == ["bar", 4]
+
+    # Raise exception after 2 seconds.
+    try:
+        modal.FunctionCall.gather(step1.spawn("bar"), step2.spawn(0))
+    except ValueError as exc:
+        assert str(exc) == "custom error"
+
+```
+
+08_advanced/poll_delayed_result.py:
+```
+# ---
+# lambda-test: false
+# ---
+
+# # Polling for a delayed result on Modal
+
+# This example shows how you can poll for a delayed result on Modal.
+
+# The function `factor_number` takes a number as input and returns the prime factors of the number. The function could take a long time to run, so we don't want to wait for the result in the web server.
+# Instead, we return a URL that the client can poll to get the result.
+
+import fastapi
+import modal
+from modal.functions import FunctionCall
+from starlette.responses import HTMLResponse, RedirectResponse
+
+app = modal.App("example-poll")
+
+web_app = fastapi.FastAPI()
+
+
+@app.function(image=modal.Image.debian_slim().pip_install("primefac"))
+def factor_number(number):
+    import primefac
+
+    return list(primefac.primefac(number))  # could take a long time
+
+
+@web_app.get("/")
+async def index():
+    return HTMLResponse(
+        """
+    <form method="get" action="/factors">
+        Enter a number: <input name="number" />
+        <input type="submit" value="Factorize!"/>
+    </form>
+    """
+    )
+
+
+@web_app.get("/factors")
+async def web_submit(request: fastapi.Request, number: int):
+    call = factor_number.spawn(
+        number
+    )  # returns a FunctionCall without waiting for result
+    polling_url = request.url.replace(
+        path="/result", query=f"function_id={call.object_id}"
+    )
+    return RedirectResponse(polling_url)
+
+
+@web_app.get("/result")
+async def web_poll(function_id: str):
+    function_call = FunctionCall.from_id(function_id)
+    try:
+        result = function_call.get(timeout=0)
+    except TimeoutError:
+        result = "not ready"
+
+    return result
+
+
+@app.function()
+@modal.asgi_app()
+def fastapi_app():
+    return web_app
+
+```
+
+09_job_queues/doc_ocr_frontend\index.html:
+```
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="images/favicon.svg" />
+    <title>Receipt Parser</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React -->
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18/umd/react.development.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
+    ></script>
+
+    <!-- Babel for JSX -->
+    <script
+      crossorigin
+      src="https://unpkg.com/@babel/standalone/babel.min.js"
+    ></script>
+
+    <!-- Loading Spinner -->
+    <script crossorigin src="https://spin.js.org/spin.umd.js"></script>
+    <link rel="stylesheet" href="https://spin.js.org/spin.css" />
+
+    <!-- Inter Font -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap"
+    />
+
+    <!-- Tailwind Config -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              modal: {
+                primary: "#4F46E5",
+                secondary: "#818CF8",
+              },
+            },
+            fontFamily: {
+              inter: ["Inter", "sans-serif"],
+              arial: ["Arial", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="bg-black">
+    <noscript>You must have JavaScript enabled to use this app.</noscript>
+    <div id="react"></div>
+    <script type="text/babel" src="/app.jsx"></script>
+  </body>
+</html>
+
+```
+
+09_job_queues/doc_ocr_jobs.py:
+```
+# ---
+# deploy: true
+# mypy: ignore-errors
+# ---
+
+# # Run a job queue for GOT-OCR
+
+# This tutorial shows you how to use Modal as an infinitely scalable job queue
+# that can service async tasks from a web app. For the purpose of this tutorial,
+# we've also built a [React + FastAPI web app on Modal](https://modal.com/docs/examples/doc_ocr_webapp)
+# that works together with it, but note that you don't need a web app running on Modal
+# to use this pattern. You can submit async tasks to Modal from any Python
+# application (for example, a regular Django app running on Kubernetes).
+
+# Our job queue will handle a single task: running OCR transcription for images of receipts.
+# We'll make use of a pre-trained model:
+# the [General OCR Theory (GOT) 2.0 model](https://huggingface.co/stepfun-ai/GOT-OCR2_0).
+
+# Try it out for yourself [here](https://modal-labs-examples--example-doc-ocr-webapp-wrapper.modal.run/).
+
+# [![Webapp frontend](https://modal-cdn.com/doc_ocr_frontend.jpg)](https://modal-labs-examples--example-doc-ocr-webapp-wrapper.modal.run/)
+
+# ## Define an App
+
+# Let's first import `modal` and define an [`App`](https://modal.com/docs/reference/modal.App).
+# Later, we'll use the name provided for our `App` to find it from our web app and submit tasks to it.
+
+import modal
+
+app = modal.App("example-doc-ocr-jobs")
+
+# We also define the dependencies for our Function by specifying an
+# [Image](https://modal.com/docs/guide/images).
+
+inference_image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "accelerate==0.28.0",
+    "huggingface_hub[hf_transfer]==0.27.1",
+    "numpy<2",
+    "tiktoken==0.6.0",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "transformers==4.48.0",
+    "verovio==4.3.1",
+)
+
+# ## Cache the pre-trained model on a Modal Volume
+
+# We can obtain the pre-trained model we want to run from Hugging Face
+# using its name and a revision identifier.
+
+MODEL_NAME = "ucaslcl/GOT-OCR2_0"
+MODEL_REVISION = "cf6b7386bc89a54f09785612ba74cb12de6fa17c"
+
+# The logic for loading the model based on this information
+# is encapsulated in the `setup` function below.
+
+
+def setup():
+    import warnings
+
+    from transformers import AutoModel, AutoTokenizer
+
+    with (
+        warnings.catch_warnings()
+    ):  # filter noisy warnings from GOT modeling code
+        warnings.simplefilter("ignore")
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_NAME, revision=MODEL_REVISION, trust_remote_code=True
+        )
+
+        model = AutoModel.from_pretrained(
+            MODEL_NAME,
+            revision=MODEL_REVISION,
+            trust_remote_code=True,
+            device_map="cuda",
+            use_safetensors=True,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+
+    return tokenizer, model
+
+
+# The `.from_pretrained` methods from Hugging Face are smart enough
+# to only download models if they haven't been downloaded before.
+# But in Modal's serverless environment, filesystems are ephemeral,
+# and so using this code alone would mean that models need to get downloaded
+# on every request.
+
+# So instead, we create a Modal [Volume](https://modal.com/docs/guide/volumes)
+# to store the model -- a durable filesystem that any Modal Function can access.
+
+model_cache = modal.Volume.from_name("hf-hub-cache", create_if_missing=True)
+
+# We also update the environment variables for our Function
+# to include this new path for the model cache --
+# and to enable fast downloads with the `hf_transfer` library.
+
+MODEL_CACHE_PATH = "/root/models"
+inference_image = inference_image.env(
+    {"HF_HUB_CACHE": MODEL_CACHE_PATH, "HF_HUB_ENABLE_HF_TRANSFER": "1"}
+)
+
+
+# ## Run OCR inference on Modal by wrapping with `app.function`
+
+# Now let's set up the actual OCR inference.
+
+# Using the [`@app.function`](https://modal.com/docs/reference/modal.App#function)
+# decorator, we set up a Modal [Function](https://modal.com/docs/reference/modal.Function).
+# We provide arguments to that decorator to customize the hardware, scaling, and other features
+# of the Function.
+
+# Here, we say that this Function should use NVIDIA L40S [GPUs](https://modal.com/docs/guide/gpu),
+# automatically [retry](https://modal.com/docs/guide/retries#function-retries) failures up to 3 times,
+# and have access to our [shared model cache](https://modal.com/docs/guide/volumes).
+
+
+@app.function(
+    gpu="l40s",
+    retries=3,
+    volumes={MODEL_CACHE_PATH: model_cache},
+    image=inference_image,
+)
+def parse_receipt(image: bytes) -> str:
+    from tempfile import NamedTemporaryFile
+
+    tokenizer, model = setup()
+
+    with NamedTemporaryFile(delete=False, mode="wb+") as temp_img_file:
+        temp_img_file.write(image)
+        output = model.chat(tokenizer, temp_img_file.name, ocr_type="format")
+
+    print("Result: ", output)
+
+    return output
+
+
+# ## Deploy
+
+# Now that we have a function, we can publish it by deploying the app:
+
+# ```shell
+# modal deploy doc_ocr_jobs.py
+# ```
+
+# Once it's published, we can [look up](https://modal.com/docs/guide/trigger-deployed-functions) this Function
+# from another Python process and submit tasks to it:
+
+# ```python
+# fn = modal.Function.from_name("example-doc-ocr-jobs", "parse_receipt")
+# fn.spawn(my_image)
+# ```
+
+# Modal will auto-scale to handle all the tasks queued, and
+# then scale back down to 0 when there's no work left. To see how you could use this from a Python web
+# app, take a look at the [receipt parser frontend](https://modal.com/docs/examples/doc_ocr_webapp)
+# tutorial.
+
+# ## Run manually
+
+# We can also trigger `parse_receipt` manually for easier debugging:
+
+# ```shell
+# modal run doc_ocr_jobs
+# ```
+
+# To try it out, you can find some
+# example receipts [here](https://drive.google.com/drive/folders/1S2D1gXd4YIft4a5wDtW99jfl38e85ouW).
+
+
+@app.local_entrypoint()
+def main(receipt_filename: str = None):
+    from pathlib import Path
+
+    import requests
+
+    if receipt_filename is None:
+        receipt_filename = Path(__file__).parent / "receipt.png"
+    else:
+        receipt_filename = Path(receipt_filename)
+
+    if receipt_filename.exists():
+        image = receipt_filename.read_bytes()
+        print(f"running OCR on {receipt_filename}")
+    else:
+        receipt_url = "https://nwlc.org/wp-content/uploads/2022/01/Brandys-walmart-receipt-8.webp"
+        image = requests.get(receipt_url).content
+        print(f"running OCR on sample from URL {receipt_url}")
+    print(parse_receipt.remote(image))
+
+```
+
+09_job_queues/doc_ocr_webapp.py:
+```
+# ---
+# deploy: true
+# cmd: ["modal", "serve", "09_job_queues/doc_ocr_webapp.py"]
+# ---
+
+# # Serve a document OCR web app
+
+# This tutorial shows you how to use Modal to deploy a fully serverless
+# [React](https://reactjs.org/) + [FastAPI](https://fastapi.tiangolo.com/) application.
+# We're going to build a simple "Receipt Parser" web app that submits OCR transcription
+# tasks to a separate Modal app defined in [another example](https://modal.com/docs/examples/doc_ocr_jobs),
+# polls until the task is completed, and displays
+# the results. Try it out for yourself
+# [here](https://modal-labs-examples--example-doc-ocr-webapp-wrapper.modal.run/).
+
+# [![Webapp frontend](https://modal-cdn.com/doc_ocr_frontend.jpg)](https://modal-labs-examples--example-doc-ocr-webapp-wrapper.modal.run/)
+
+# ## Basic setup
+
+# Let's get the imports out of the way and define an [`App`](https://modal.com/docs/reference/modal.App).
+
+from pathlib import Path
+
+import fastapi
+import fastapi.staticfiles
+import modal
+
+app = modal.App("example-doc-ocr-webapp")
+
+# Modal works with any [ASGI](https://modal.com/docs/guide/webhooks#serving-asgi-and-wsgi-apps) or
+# [WSGI](https://modal.com/docs/guide/webhooks#wsgi) web framework. Here, we choose to use [FastAPI](https://fastapi.tiangolo.com/).
+
+web_app = fastapi.FastAPI()
+
+# ## Define endpoints
+
+# We need two endpoints: one to accept an image and submit it to the Modal job queue,
+# and another to poll for the results of the job.
+
+# In `parse`, we're going to submit tasks to the function defined in the [Job
+# Queue tutorial](https://modal.com/docs/examples/doc_ocr_jobs), so we import it first using
+# [`Function.lookup`](https://modal.com/docs/reference/modal.Function#lookup).
+
+# We call [`.spawn()`](https://modal.com/docs/reference/modal.Function#spawn) on the function handle
+# we imported above to kick off our function without blocking on the results. `spawn` returns
+# a unique ID for the function call, which we then use
+# to poll for its result.
+
+
+@web_app.post("/parse")
+async def parse(request: fastapi.Request):
+    parse_receipt = modal.Function.from_name(
+        "example-doc-ocr-jobs", "parse_receipt"
+    )
+
+    form = await request.form()
+    receipt = await form["receipt"].read()  # type: ignore
+    call = parse_receipt.spawn(receipt)
+    return {"call_id": call.object_id}
+
+
+# `/result` uses the provided `call_id` to instantiate a `modal.FunctionCall` object, and attempt
+# to get its result. If the call hasn't finished yet, we return a `202` status code, which indicates
+# that the server is still working on the job.
+
+
+@web_app.get("/result/{call_id}")
+async def poll_results(call_id: str):
+    function_call = modal.functions.FunctionCall.from_id(call_id)
+    try:
+        result = function_call.get(timeout=0)
+    except TimeoutError:
+        return fastapi.responses.JSONResponse(content="", status_code=202)
+
+    return result
+
+
+# Now that we've defined our endpoints, we're ready to host them on Modal.
+# First, we specify our dependencies -- here, a basic Debian Linux
+# environment with FastAPI installed.
+
+image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "fastapi[standard]==0.115.4"
+)
+
+# Then, we add the static files for our front-end. We've made [a simple React
+# app](https://github.com/modal-labs/modal-examples/tree/main/09_job_queues/doc_ocr_frontend)
+# that hits the two endpoints defined above. To package these files with our app, we use
+# `add_local_dir` with the local directory of the assets, and specify that we want them
+# in the `/assets` directory inside our container (the `remote_path`). Then, we instruct FastAPI to [serve
+# this static file directory](https://fastapi.tiangolo.com/tutorial/static-files/) at our root path.
+
+local_assets_path = Path(__file__).parent / "doc_ocr_frontend"
+image = image.add_local_dir(local_assets_path, remote_path="/assets")
+
+
+@app.function(image=image)
+@modal.asgi_app()
+def wrapper():
+    web_app.mount(
+        "/", fastapi.staticfiles.StaticFiles(directory="/assets", html=True)
+    )
+    return web_app
+
+
+# ## Running
+
+# While developing, you can run this as an ephemeral app by executing the command
+
+# ```shell
+# modal serve doc_ocr_webapp.py
+# ```
+
+# Modal watches all the mounted files and updates the app if anything changes.
+# See [these docs](https://modal.com/docs/guide/webhooks#developing-with-modal-serve)
+# for more details.
+
+# ## Deploy
+
+# To deploy your application, run
+
+# ```shell
+# modal deploy doc_ocr_webapp.py
+# ```
+
+# That's all!
+
+# If successful, this will print a URL for your app that you can navigate to in
+# your browser 🎉 .
+
+# [![Webapp frontend](https://modal-cdn.com/doc_ocr_frontend.jpg)](https://modal-labs-examples--example-doc-ocr-webapp-wrapper.modal.run/)
+
+```
+
